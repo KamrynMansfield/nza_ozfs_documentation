@@ -1,0 +1,7 @@
+---
+title: "Reading"
+format: html
+editor: visual
+---
+
+## This is where the we can put reading practices and resources

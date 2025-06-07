@@ -1,0 +1,41 @@
+project:
+  type: website
+  output-dir: docs
+
+website:
+  title: "National Zoning Atlas to Open Zoning Feed Specification"
+  bread-crumbs: false
+  navbar:
+    background: dark
+    foreground: light
+    pinned: false
+    search: true
+  sidebar:
+    collapse-level: 1
+    pinned: false
+    serach: false
+    style: "docked"
+    collapsible: true
+    open: true
+    position: left
+    contents: 
+    - text: "Home"
+      href: index.qmd
+    - text: "New Column Names"
+      href: qmd/col_names.qmd
+    - text: "R Script"
+      href: qmd/rscript.qmd
+    - text: "Walkthrough"
+      href: qmd/example.qmd
+        
+        
+theme: simplex
+  
+execute:
+  echo: false
+  message: false
+  warning: false
+  error: false
+  
+lightbox: TRUE
+
