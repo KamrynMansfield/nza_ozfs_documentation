@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 
-<title>Listening – National Zoning Atlas to Open Zoning Feed Specification</title>
+<title>R Script – National Zoning Atlas to Open Zoning Feed Specification</title>
 <style>
 code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
@@ -19,6 +19,40 @@ ul.task-list li input[type="checkbox"] {
   width: 0.8em;
   margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
   vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { display: inline-block; text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
 }
 </style>
 
@@ -92,7 +126,7 @@ ul.task-list li input[type="checkbox"] {
         <i class="bi bi-layout-text-sidebar-reverse"></i>
       </button>
         <a class="flex-grow-1 no-decor" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
-          <h1 class="quarto-secondary-nav-title">Listening</h1>
+          <h1 class="quarto-secondary-nav-title">R Script</h1>
         </a>     
     </div>
   </nav>
@@ -138,7 +172,7 @@ ul.task-list li input[type="checkbox"] {
 
 <header id="title-block-header" class="quarto-title-block default">
 <div class="quarto-title">
-<h1 class="title d-none d-lg-block">Listening</h1>
+<h1 class="title d-none d-lg-block">R Script</h1>
 </div>
 
 
@@ -155,9 +189,585 @@ ul.task-list li input[type="checkbox"] {
 </header>
 
 
-<section id="section" class="level2">
-<h2 class="anchored" data-anchor-id="section"></h2>
-<p>This is where the we can put listening practices and resources</p>
+<p>The following packages need to be loaded to run the r functions:</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb1"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(tidyverse)</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(readxl)</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(sf)</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(rjson)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+<p>Below is each function with a short explanation of what it does. Click <a href="../R/atlas_to_geojson.R">here</a> to see the raw r script.</p>
+<section id="make_ozfs" class="level2">
+<h2 class="anchored" data-anchor-id="make_ozfs">make_ozfs()</h2>
+<p>The main function that takes in two folder paths: a folder containing NZA zoning files, and a folder containing NZA geometry files. The function returns a folder of .zoning files to the specified path. Remember that the zoning files and the geometry files have to be in the same order so the cities match.</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb2"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>make_ozfs <span class="ot">&lt;-</span> <span class="cf">function</span>(nza_files_folder, </span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>                      geom_files_folder, </span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>                      new_folder_to_save_to, </span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>                      col_descriptions_path,</span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>                      <span class="at">extra_overlay_geom_file =</span> <span class="cn">NULL</span>){</span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>  nza_files_list <span class="ot">&lt;-</span> <span class="fu">list.files</span>(nza_files_folder, <span class="at">full.names =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>  geom_files_list <span class="ot">&lt;-</span> <span class="fu">list.files</span>(geom_files_folder, <span class="at">full.names =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>  <span class="co"># import col_descriptions file</span></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (<span class="fu">file.exists</span>(col_descriptions_path)){</span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>    splt <span class="ot">&lt;-</span> <span class="fu">strsplit</span>(col_descriptions_path, <span class="st">"[.]"</span>)[[<span class="dv">1</span>]]</span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a>    ext <span class="ot">&lt;-</span> splt[[<span class="fu">length</span>(splt)]]</span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (ext <span class="sc">==</span> <span class="st">"csv"</span>){</span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a>      col_descriptions <span class="ot">&lt;-</span> <span class="fu">read.csv</span>(col_descriptions_path)</span>
+<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a>    } <span class="cf">else</span> <span class="cf">if</span> (ext <span class="sc">==</span> <span class="st">"xlsx"</span>){</span>
+<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a>      col_descriptions <span class="ot">&lt;-</span> <span class="fu">read_excel</span>(col_descriptions_path)</span>
+<span id="cb2-18"><a href="#cb2-18" aria-hidden="true" tabindex="-1"></a>    } <span class="cf">else</span>{</span>
+<span id="cb2-19"><a href="#cb2-19" aria-hidden="true" tabindex="-1"></a>      <span class="fu">stop</span>(<span class="st">"col_descriptions must be .xlsx or .csv"</span>)</span>
+<span id="cb2-20"><a href="#cb2-20" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb2-21"><a href="#cb2-21" aria-hidden="true" tabindex="-1"></a>  } <span class="cf">else</span>{</span>
+<span id="cb2-22"><a href="#cb2-22" aria-hidden="true" tabindex="-1"></a>    <span class="fu">stop</span>(<span class="st">"col_descriptions must be .xlsx or .csv"</span>)</span>
+<span id="cb2-23"><a href="#cb2-23" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb2-24"><a href="#cb2-24" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb2-25"><a href="#cb2-25" aria-hidden="true" tabindex="-1"></a>  <span class="co"># establish use_type_indicators</span></span>
+<span id="cb2-26"><a href="#cb2-26" aria-hidden="true" tabindex="-1"></a>  use_type_indicators <span class="ot">&lt;-</span> <span class="fu">list</span>(<span class="st">`</span><span class="at">1_unit</span><span class="st">`</span> <span class="ot">=</span> <span class="st">"_1"</span>, </span>
+<span id="cb2-27"><a href="#cb2-27" aria-hidden="true" tabindex="-1"></a>                              <span class="st">`</span><span class="at">2_unit</span><span class="st">`</span> <span class="ot">=</span> <span class="st">"_2"</span>,</span>
+<span id="cb2-28"><a href="#cb2-28" aria-hidden="true" tabindex="-1"></a>                              <span class="st">`</span><span class="at">3_unit</span><span class="st">`</span> <span class="ot">=</span> <span class="st">"_3"</span>,</span>
+<span id="cb2-29"><a href="#cb2-29" aria-hidden="true" tabindex="-1"></a>                              <span class="st">`</span><span class="at">4_plus</span><span class="st">`</span> <span class="ot">=</span> <span class="st">"_4"</span>,</span>
+<span id="cb2-30"><a href="#cb2-30" aria-hidden="true" tabindex="-1"></a>                              <span class="st">`</span><span class="at">townhome</span><span class="st">`</span> <span class="ot">=</span> <span class="st">"_th"</span>)</span>
+<span id="cb2-31"><a href="#cb2-31" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb2-32"><a href="#cb2-32" aria-hidden="true" tabindex="-1"></a>  <span class="co"># start empty lists to track errors</span></span>
+<span id="cb2-33"><a href="#cb2-33" aria-hidden="true" tabindex="-1"></a>  ozfs_errors <span class="ot">&lt;-</span> <span class="fu">c</span>()</span>
+<span id="cb2-34"><a href="#cb2-34" aria-hidden="true" tabindex="-1"></a>  ozfs_warnings <span class="ot">&lt;-</span> <span class="fu">c</span>()</span>
+<span id="cb2-35"><a href="#cb2-35" aria-hidden="true" tabindex="-1"></a>  geom_errors <span class="ot">&lt;-</span> <span class="fu">c</span>()</span>
+<span id="cb2-36"><a href="#cb2-36" aria-hidden="true" tabindex="-1"></a>  geom_warnings <span class="ot">&lt;-</span> <span class="fu">c</span>()</span>
+<span id="cb2-37"><a href="#cb2-37" aria-hidden="true" tabindex="-1"></a>  overlay_errors <span class="ot">&lt;-</span> <span class="fu">c</span>()</span>
+<span id="cb2-38"><a href="#cb2-38" aria-hidden="true" tabindex="-1"></a>  overlay_warnings <span class="ot">&lt;-</span> <span class="fu">c</span>()</span>
+<span id="cb2-39"><a href="#cb2-39" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb2-40"><a href="#cb2-40" aria-hidden="true" tabindex="-1"></a>  <span class="co"># loop through each NZA file</span></span>
+<span id="cb2-41"><a href="#cb2-41" aria-hidden="true" tabindex="-1"></a>  <span class="cf">for</span> (i <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span><span class="fu">length</span>(nza_files_list)){</span>
+<span id="cb2-42"><a href="#cb2-42" aria-hidden="true" tabindex="-1"></a>    nza_file_path <span class="ot">&lt;-</span> nza_files_list[[i]]</span>
+<span id="cb2-43"><a href="#cb2-43" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb2-44"><a href="#cb2-44" aria-hidden="true" tabindex="-1"></a>    file_name <span class="ot">&lt;-</span> <span class="fu">basename</span>(nza_files_list[[i]])</span>
+<span id="cb2-45"><a href="#cb2-45" aria-hidden="true" tabindex="-1"></a>    file_name_no_ext <span class="ot">&lt;-</span> <span class="fu">sub</span>(<span class="st">".xlsx"</span>,<span class="st">""</span>,file_name)</span>
+<span id="cb2-46"><a href="#cb2-46" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb2-47"><a href="#cb2-47" aria-hidden="true" tabindex="-1"></a>    ozfs_list_format <span class="ot">&lt;-</span> <span class="fu">tryCatch</span>(</span>
+<span id="cb2-48"><a href="#cb2-48" aria-hidden="true" tabindex="-1"></a>      {</span>
+<span id="cb2-49"><a href="#cb2-49" aria-hidden="true" tabindex="-1"></a>        <span class="co"># Code that might throw an error</span></span>
+<span id="cb2-50"><a href="#cb2-50" aria-hidden="true" tabindex="-1"></a>        <span class="fu">atlas_to_ozfs</span>(nza_file_path, </span>
+<span id="cb2-51"><a href="#cb2-51" aria-hidden="true" tabindex="-1"></a>                      col_descriptions, </span>
+<span id="cb2-52"><a href="#cb2-52" aria-hidden="true" tabindex="-1"></a>                      use_type_indicators,</span>
+<span id="cb2-53"><a href="#cb2-53" aria-hidden="true" tabindex="-1"></a>                      <span class="at">version_date =</span> <span class="st">"2024-08-14"</span>)</span>
+<span id="cb2-54"><a href="#cb2-54" aria-hidden="true" tabindex="-1"></a>      }, <span class="at">warning =</span> <span class="cf">function</span>(w) {</span>
+<span id="cb2-55"><a href="#cb2-55" aria-hidden="true" tabindex="-1"></a>        <span class="fu">return</span>(<span class="fu">c</span>(<span class="st">"warning"</span>,e<span class="sc">$</span>message))</span>
+<span id="cb2-56"><a href="#cb2-56" aria-hidden="true" tabindex="-1"></a>      }, <span class="at">error =</span> <span class="cf">function</span>(e) {</span>
+<span id="cb2-57"><a href="#cb2-57" aria-hidden="true" tabindex="-1"></a>        <span class="co"># Code to run if an error occurs</span></span>
+<span id="cb2-58"><a href="#cb2-58" aria-hidden="true" tabindex="-1"></a>        <span class="fu">return</span>(<span class="fu">c</span>(<span class="st">"error"</span>,e<span class="sc">$</span>message))</span>
+<span id="cb2-59"><a href="#cb2-59" aria-hidden="true" tabindex="-1"></a>        </span>
+<span id="cb2-60"><a href="#cb2-60" aria-hidden="true" tabindex="-1"></a>      }</span>
+<span id="cb2-61"><a href="#cb2-61" aria-hidden="true" tabindex="-1"></a>    )</span>
+<span id="cb2-62"><a href="#cb2-62" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb2-63"><a href="#cb2-63" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (ozfs_list_format[[<span class="dv">1</span>]] <span class="sc">==</span> <span class="st">"warning"</span>){</span>
+<span id="cb2-64"><a href="#cb2-64" aria-hidden="true" tabindex="-1"></a>      ozfs_warnings <span class="ot">&lt;-</span> <span class="fu">c</span>(ozfs_warnings, ozfs_list_format[[<span class="dv">2</span>]])</span>
+<span id="cb2-65"><a href="#cb2-65" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb2-66"><a href="#cb2-66" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (ozfs_list_format[[<span class="dv">1</span>]] <span class="sc">==</span> <span class="st">"error"</span>){</span>
+<span id="cb2-67"><a href="#cb2-67" aria-hidden="true" tabindex="-1"></a>      ozfs_errors <span class="ot">&lt;-</span> <span class="fu">c</span>(ozfs_errors, ozfs_list_format[[<span class="dv">2</span>]])</span>
+<span id="cb2-68"><a href="#cb2-68" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb2-69"><a href="#cb2-69" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb2-70"><a href="#cb2-70" aria-hidden="true" tabindex="-1"></a>    ozfs_list_with_geom <span class="ot">&lt;-</span> <span class="fu">tryCatch</span>(</span>
+<span id="cb2-71"><a href="#cb2-71" aria-hidden="true" tabindex="-1"></a>      {</span>
+<span id="cb2-72"><a href="#cb2-72" aria-hidden="true" tabindex="-1"></a>        <span class="co"># Code that might throw an error</span></span>
+<span id="cb2-73"><a href="#cb2-73" aria-hidden="true" tabindex="-1"></a>        <span class="fu">add_geometry_to_ozfs</span>(geom_files_list[[i]], ozfs_list_format)</span>
+<span id="cb2-74"><a href="#cb2-74" aria-hidden="true" tabindex="-1"></a>      }, <span class="at">warning =</span> <span class="cf">function</span>(w) {</span>
+<span id="cb2-75"><a href="#cb2-75" aria-hidden="true" tabindex="-1"></a>        <span class="fu">return</span>(<span class="fu">c</span>(<span class="st">"warning"</span>,e<span class="sc">$</span>message))</span>
+<span id="cb2-76"><a href="#cb2-76" aria-hidden="true" tabindex="-1"></a>      },</span>
+<span id="cb2-77"><a href="#cb2-77" aria-hidden="true" tabindex="-1"></a>      <span class="at">error =</span> <span class="cf">function</span>(e) {</span>
+<span id="cb2-78"><a href="#cb2-78" aria-hidden="true" tabindex="-1"></a>        <span class="co"># Code to run if an error occurs</span></span>
+<span id="cb2-79"><a href="#cb2-79" aria-hidden="true" tabindex="-1"></a>        <span class="fu">return</span>(<span class="fu">c</span>(<span class="st">"error"</span>,e<span class="sc">$</span>message))</span>
+<span id="cb2-80"><a href="#cb2-80" aria-hidden="true" tabindex="-1"></a>        </span>
+<span id="cb2-81"><a href="#cb2-81" aria-hidden="true" tabindex="-1"></a>      }</span>
+<span id="cb2-82"><a href="#cb2-82" aria-hidden="true" tabindex="-1"></a>    )</span>
+<span id="cb2-83"><a href="#cb2-83" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb2-84"><a href="#cb2-84" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (ozfs_list_with_geom[[<span class="dv">1</span>]] <span class="sc">==</span> <span class="st">"warning"</span>){</span>
+<span id="cb2-85"><a href="#cb2-85" aria-hidden="true" tabindex="-1"></a>      geom_warnings <span class="ot">&lt;-</span> <span class="fu">c</span>(geom_warnings, ozfs_list_with_geom[[<span class="dv">2</span>]])</span>
+<span id="cb2-86"><a href="#cb2-86" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb2-87"><a href="#cb2-87" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (ozfs_list_with_geom[[<span class="dv">1</span>]] <span class="sc">==</span> <span class="st">"error"</span>){</span>
+<span id="cb2-88"><a href="#cb2-88" aria-hidden="true" tabindex="-1"></a>      geom_errors <span class="ot">&lt;-</span> <span class="fu">c</span>(geom_errors, ozfs_list_with_geom[[<span class="dv">2</span>]])</span>
+<span id="cb2-89"><a href="#cb2-89" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb2-90"><a href="#cb2-90" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb2-91"><a href="#cb2-91" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb2-92"><a href="#cb2-92" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (<span class="sc">!</span><span class="fu">is.null</span>(extra_overlay_geom_file)){</span>
+<span id="cb2-93"><a href="#cb2-93" aria-hidden="true" tabindex="-1"></a>      ozfs_list_with_geom <span class="ot">&lt;-</span> <span class="fu">tryCatch</span>(</span>
+<span id="cb2-94"><a href="#cb2-94" aria-hidden="true" tabindex="-1"></a>        {</span>
+<span id="cb2-95"><a href="#cb2-95" aria-hidden="true" tabindex="-1"></a>          <span class="co"># Code that might throw an error</span></span>
+<span id="cb2-96"><a href="#cb2-96" aria-hidden="true" tabindex="-1"></a>          <span class="fu">add_extra_overlays</span>(extra_overlay_geom_file, ozfs_list_with_geom)</span>
+<span id="cb2-97"><a href="#cb2-97" aria-hidden="true" tabindex="-1"></a>        }, <span class="at">warning =</span> <span class="cf">function</span>(w) {</span>
+<span id="cb2-98"><a href="#cb2-98" aria-hidden="true" tabindex="-1"></a>          <span class="fu">return</span>(<span class="fu">c</span>(<span class="st">"warning"</span>,e<span class="sc">$</span>message))</span>
+<span id="cb2-99"><a href="#cb2-99" aria-hidden="true" tabindex="-1"></a>        },</span>
+<span id="cb2-100"><a href="#cb2-100" aria-hidden="true" tabindex="-1"></a>        <span class="at">error =</span> <span class="cf">function</span>(e) {</span>
+<span id="cb2-101"><a href="#cb2-101" aria-hidden="true" tabindex="-1"></a>          <span class="co"># Code to run if an error occurs</span></span>
+<span id="cb2-102"><a href="#cb2-102" aria-hidden="true" tabindex="-1"></a>          <span class="fu">return</span>(<span class="fu">c</span>(<span class="st">"error"</span>,e<span class="sc">$</span>message))</span>
+<span id="cb2-103"><a href="#cb2-103" aria-hidden="true" tabindex="-1"></a>          </span>
+<span id="cb2-104"><a href="#cb2-104" aria-hidden="true" tabindex="-1"></a>        }</span>
+<span id="cb2-105"><a href="#cb2-105" aria-hidden="true" tabindex="-1"></a>      )</span>
+<span id="cb2-106"><a href="#cb2-106" aria-hidden="true" tabindex="-1"></a>      </span>
+<span id="cb2-107"><a href="#cb2-107" aria-hidden="true" tabindex="-1"></a>      <span class="cf">if</span> (ozfs_list_with_geom[[<span class="dv">1</span>]] <span class="sc">==</span> <span class="st">"warning"</span>){</span>
+<span id="cb2-108"><a href="#cb2-108" aria-hidden="true" tabindex="-1"></a>        overlay_warnings <span class="ot">&lt;-</span> <span class="fu">c</span>(ozfs_warnings, ozfs_list_format[[<span class="dv">2</span>]])</span>
+<span id="cb2-109"><a href="#cb2-109" aria-hidden="true" tabindex="-1"></a>      }</span>
+<span id="cb2-110"><a href="#cb2-110" aria-hidden="true" tabindex="-1"></a>      <span class="cf">if</span> (ozfs_list_with_geom[[<span class="dv">1</span>]] <span class="sc">==</span> <span class="st">"error"</span>){</span>
+<span id="cb2-111"><a href="#cb2-111" aria-hidden="true" tabindex="-1"></a>        overlay_errors <span class="ot">&lt;-</span> <span class="fu">c</span>(ozfs_errors, ozfs_list_format[[<span class="dv">2</span>]])</span>
+<span id="cb2-112"><a href="#cb2-112" aria-hidden="true" tabindex="-1"></a>      }</span>
+<span id="cb2-113"><a href="#cb2-113" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb2-114"><a href="#cb2-114" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb2-115"><a href="#cb2-115" aria-hidden="true" tabindex="-1"></a>    new_file_directory <span class="ot">&lt;-</span> <span class="fu">paste0</span>(new_folder_to_save_to, file_name_no_ext, <span class="st">".zoning"</span>)</span>
+<span id="cb2-116"><a href="#cb2-116" aria-hidden="true" tabindex="-1"></a>    <span class="fu">write_list_as_json</span>(ozfs_list_with_geom, new_file_directory)</span>
+<span id="cb2-117"><a href="#cb2-117" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb2-118"><a href="#cb2-118" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb2-119"><a href="#cb2-119" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (<span class="sc">!</span><span class="fu">is.null</span>(extra_overlay_geom_file)){</span>
+<span id="cb2-120"><a href="#cb2-120" aria-hidden="true" tabindex="-1"></a>    <span class="fu">list</span>(<span class="at">ozfs_errors =</span> ozfs_errors,</span>
+<span id="cb2-121"><a href="#cb2-121" aria-hidden="true" tabindex="-1"></a>         <span class="at">ozfs_warnings =</span> ozfs_warnings,</span>
+<span id="cb2-122"><a href="#cb2-122" aria-hidden="true" tabindex="-1"></a>         <span class="at">geom_errors =</span> geom_errors,</span>
+<span id="cb2-123"><a href="#cb2-123" aria-hidden="true" tabindex="-1"></a>         <span class="at">geom_warnings =</span> geom_warnings,</span>
+<span id="cb2-124"><a href="#cb2-124" aria-hidden="true" tabindex="-1"></a>         <span class="at">overlay_errors =</span> geom_errors,</span>
+<span id="cb2-125"><a href="#cb2-125" aria-hidden="true" tabindex="-1"></a>         <span class="at">overlay_warnings =</span> geom_warnings)</span>
+<span id="cb2-126"><a href="#cb2-126" aria-hidden="true" tabindex="-1"></a>  } <span class="cf">else</span>{</span>
+<span id="cb2-127"><a href="#cb2-127" aria-hidden="true" tabindex="-1"></a>    <span class="fu">list</span>(<span class="at">ozfs_errors =</span> ozfs_errors,</span>
+<span id="cb2-128"><a href="#cb2-128" aria-hidden="true" tabindex="-1"></a>         <span class="at">ozfs_warnings =</span> ozfs_warnings,</span>
+<span id="cb2-129"><a href="#cb2-129" aria-hidden="true" tabindex="-1"></a>         <span class="at">geom_errors =</span> geom_errors,</span>
+<span id="cb2-130"><a href="#cb2-130" aria-hidden="true" tabindex="-1"></a>         <span class="at">geom_warnings =</span> geom_warnings)</span>
+<span id="cb2-131"><a href="#cb2-131" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb2-132"><a href="#cb2-132" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb2-133"><a href="#cb2-133" aria-hidden="true" tabindex="-1"></a>}</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+</section>
+<section id="atlas_to_ozfs" class="level2">
+<h2 class="anchored" data-anchor-id="atlas_to_ozfs">atlas_to_ozfs()</h2>
+<p>This function creates a list structured like the .zoning file and returns the zoning data in this listed format.</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb3"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>atlas_to_ozfs <span class="ot">&lt;-</span> <span class="cf">function</span>(nza_file_path, <span class="co">#Path to one NZA file (must be xlsx or csv)</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>                          col_descriptions, <span class="co">#col_descriptions data frame</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>                          use_type_indicators, <span class="co">#use_type_indicators list</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>                          <span class="at">version_date =</span> <span class="st">"2024-08-14"</span>){ <span class="co">#the date the zoning ordinance was updated</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (<span class="fu">file.exists</span>(nza_file_path)){</span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>    splt <span class="ot">&lt;-</span> <span class="fu">strsplit</span>(nza_file_path, <span class="st">"[.]"</span>)[[<span class="dv">1</span>]]</span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>    ext <span class="ot">&lt;-</span> splt[[<span class="fu">length</span>(splt)]]</span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (ext <span class="sc">==</span> <span class="st">"csv"</span>){</span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a>      atlas_df <span class="ot">&lt;-</span> <span class="fu">read.csv</span>(nza_file_path)</span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a>    } <span class="cf">else</span> <span class="cf">if</span> (ext <span class="sc">==</span> <span class="st">"xlsx"</span>){</span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a>      atlas_df <span class="ot">&lt;-</span> <span class="fu">read_excel</span>(nza_file_path)</span>
+<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a>    } <span class="cf">else</span>{</span>
+<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a>      <span class="fu">stop</span>(<span class="st">"nza_file_path must be .xlsx or .csv"</span>)</span>
+<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a>  } <span class="cf">else</span>{</span>
+<span id="cb3-17"><a href="#cb3-17" aria-hidden="true" tabindex="-1"></a>    <span class="fu">stop</span>(<span class="st">"nza_file_path must be .xlsx or .csv"</span>)</span>
+<span id="cb3-18"><a href="#cb3-18" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb3-19"><a href="#cb3-19" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb3-20"><a href="#cb3-20" aria-hidden="true" tabindex="-1"></a>  <span class="co"># start the geojson list with an empty features list</span></span>
+<span id="cb3-21"><a href="#cb3-21" aria-hidden="true" tabindex="-1"></a>  ozfs_format <span class="ot">&lt;-</span> <span class="fu">list</span>(<span class="at">type =</span> <span class="st">"FeatureCollection"</span>,</span>
+<span id="cb3-22"><a href="#cb3-22" aria-hidden="true" tabindex="-1"></a>                      <span class="at">version =</span> <span class="st">"0.5.0"</span>,</span>
+<span id="cb3-23"><a href="#cb3-23" aria-hidden="true" tabindex="-1"></a>                      <span class="at">muni_name =</span> atlas_df[[<span class="dv">1</span>,<span class="st">"muni_name"</span>]],</span>
+<span id="cb3-24"><a href="#cb3-24" aria-hidden="true" tabindex="-1"></a>                      <span class="at">date =</span> version_date,</span>
+<span id="cb3-25"><a href="#cb3-25" aria-hidden="true" tabindex="-1"></a>                      <span class="at">definitions =</span> <span class="fu">list</span>(<span class="at">height =</span> <span class="fu">list</span>(<span class="fu">list</span>(<span class="at">condition =</span> <span class="st">"roof_type == 'hip'"</span>,</span>
+<span id="cb3-26"><a href="#cb3-26" aria-hidden="true" tabindex="-1"></a>                                                            <span class="at">expression =</span> <span class="st">"0.5 * (height_top + height_eave)"</span>),</span>
+<span id="cb3-27"><a href="#cb3-27" aria-hidden="true" tabindex="-1"></a>                                                       <span class="fu">list</span>(<span class="at">condition =</span> <span class="st">"roof_type == 'mansard'"</span>,</span>
+<span id="cb3-28"><a href="#cb3-28" aria-hidden="true" tabindex="-1"></a>                                                            <span class="at">expression =</span> <span class="st">"height_deck"</span>),</span>
+<span id="cb3-29"><a href="#cb3-29" aria-hidden="true" tabindex="-1"></a>                                                       <span class="fu">list</span>(<span class="at">condition =</span> <span class="st">"roof_type == 'gable'"</span>,</span>
+<span id="cb3-30"><a href="#cb3-30" aria-hidden="true" tabindex="-1"></a>                                                            <span class="at">expression =</span> <span class="st">"0.5 * (height_top + height_eave)"</span>),</span>
+<span id="cb3-31"><a href="#cb3-31" aria-hidden="true" tabindex="-1"></a>                                                       <span class="fu">list</span>(<span class="at">condition =</span> <span class="st">"roof_type == 'skillion'"</span>,</span>
+<span id="cb3-32"><a href="#cb3-32" aria-hidden="true" tabindex="-1"></a>                                                            <span class="at">expression =</span> <span class="st">"0.5 * (height_top + height_eave)"</span>),</span>
+<span id="cb3-33"><a href="#cb3-33" aria-hidden="true" tabindex="-1"></a>                                                       <span class="fu">list</span>(<span class="at">condition =</span> <span class="st">"roof_type == 'gambrel'"</span>,</span>
+<span id="cb3-34"><a href="#cb3-34" aria-hidden="true" tabindex="-1"></a>                                                            <span class="at">expression =</span> <span class="st">"0.5 * (height_top + height_eave)"</span>)),</span>
+<span id="cb3-35"><a href="#cb3-35" aria-hidden="true" tabindex="-1"></a>                                         <span class="at">bldg_type =</span> <span class="fu">list</span>(<span class="fu">list</span>(<span class="at">condition =</span> <span class="st">"total_units == 1"</span>,</span>
+<span id="cb3-36"><a href="#cb3-36" aria-hidden="true" tabindex="-1"></a>                                                               <span class="at">expression =</span> <span class="st">"1_unit"</span>),</span>
+<span id="cb3-37"><a href="#cb3-37" aria-hidden="true" tabindex="-1"></a>                                                          <span class="fu">list</span>(<span class="at">condition =</span> <span class="st">"total_units == 2"</span>,</span>
+<span id="cb3-38"><a href="#cb3-38" aria-hidden="true" tabindex="-1"></a>                                                               <span class="at">expression =</span> <span class="st">"2_unit"</span>),</span>
+<span id="cb3-39"><a href="#cb3-39" aria-hidden="true" tabindex="-1"></a>                                                          <span class="fu">list</span>(<span class="at">condition =</span> <span class="st">"total_units == 3"</span>,</span>
+<span id="cb3-40"><a href="#cb3-40" aria-hidden="true" tabindex="-1"></a>                                                               <span class="at">expression =</span> <span class="st">"3_unit"</span>),</span>
+<span id="cb3-41"><a href="#cb3-41" aria-hidden="true" tabindex="-1"></a>                                                          <span class="fu">list</span>(<span class="at">condition =</span> <span class="st">"total_units &gt; 3"</span>,</span>
+<span id="cb3-42"><a href="#cb3-42" aria-hidden="true" tabindex="-1"></a>                                                               <span class="at">expression =</span> <span class="st">"4_plus"</span>),</span>
+<span id="cb3-43"><a href="#cb3-43" aria-hidden="true" tabindex="-1"></a>                                                          <span class="fu">list</span>(<span class="at">condition =</span> <span class="fu">list</span>(<span class="st">"total_units &gt; 2"</span>, <span class="st">"outside_entrys == total_units"</span>),</span>
+<span id="cb3-44"><a href="#cb3-44" aria-hidden="true" tabindex="-1"></a>                                                               <span class="at">expression =</span> <span class="st">"townhome"</span>))),</span>
+<span id="cb3-45"><a href="#cb3-45" aria-hidden="true" tabindex="-1"></a>                      <span class="at">features =</span> <span class="fu">list</span>())</span>
+<span id="cb3-46"><a href="#cb3-46" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb3-47"><a href="#cb3-47" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb3-48"><a href="#cb3-48" aria-hidden="true" tabindex="-1"></a>  <span class="co"># loop through each row of atlas_df</span></span>
+<span id="cb3-49"><a href="#cb3-49" aria-hidden="true" tabindex="-1"></a>  <span class="cf">for</span> (i <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span><span class="fu">nrow</span>(atlas_df)){</span>
+<span id="cb3-50"><a href="#cb3-50" aria-hidden="true" tabindex="-1"></a>    atlas_row_df <span class="ot">&lt;-</span> atlas_df[i,]</span>
+<span id="cb3-51"><a href="#cb3-51" aria-hidden="true" tabindex="-1"></a>    ozfs_format<span class="sc">$</span>features[[i]] <span class="ot">&lt;-</span> <span class="fu">organize_feature</span>(atlas_row_df, </span>
+<span id="cb3-52"><a href="#cb3-52" aria-hidden="true" tabindex="-1"></a>                                                   col_descriptions, </span>
+<span id="cb3-53"><a href="#cb3-53" aria-hidden="true" tabindex="-1"></a>                                                   use_type_indicators)</span>
+<span id="cb3-54"><a href="#cb3-54" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb3-55"><a href="#cb3-55" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb3-56"><a href="#cb3-56" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb3-57"><a href="#cb3-57" aria-hidden="true" tabindex="-1"></a>  ozfs_format</span>
+<span id="cb3-58"><a href="#cb3-58" aria-hidden="true" tabindex="-1"></a>}</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+</section>
+<section id="organize_feature" class="level2">
+<h2 class="anchored" data-anchor-id="organize_feature">organize_feature()</h2>
+<p>This function supports the atlas_to_ozfs function by creating a formatted list for the specified zoning district. It basically creates a formatted list for one feature of the geojson file with all of its values.</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb4"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>organize_feature <span class="ot">&lt;-</span> <span class="cf">function</span>(atlas_row_df, </span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>                             col_descriptions, </span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>                             use_type_indicators){</span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>  <span class="co"># create a list with a column for </span></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>  separated_uses <span class="ot">&lt;-</span> use_type_indicators</span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>  uses_permitted <span class="ot">&lt;-</span> <span class="fu">c</span>()</span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>  <span class="cf">for</span> (i <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span><span class="fu">length</span>(use_type_indicators)){</span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>    use_name <span class="ot">&lt;-</span> <span class="fu">names</span>(use_type_indicators)[[i]]</span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>    indicator <span class="ot">&lt;-</span> use_type_indicators[[i]]</span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a>    filtered_columns <span class="ot">&lt;-</span> atlas_row_df[,<span class="fu">grep</span>(indicator, <span class="fu">names</span>(atlas_row_df))]</span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a>    <span class="fu">names</span>(filtered_columns) <span class="ot">&lt;-</span> <span class="fu">gsub</span>(indicator,<span class="st">""</span>,<span class="fu">names</span>(filtered_columns))</span>
+<span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb4-16"><a href="#cb4-16" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (<span class="sc">!</span><span class="fu">is.na</span>(filtered_columns<span class="sc">$</span>use_permitted) <span class="sc">&amp;</span> filtered_columns<span class="sc">$</span>use_permitted <span class="sc">==</span> <span class="st">"Allowed/Conditional"</span>){</span>
+<span id="cb4-17"><a href="#cb4-17" aria-hidden="true" tabindex="-1"></a>      uses_permitted <span class="ot">&lt;-</span> <span class="fu">c</span>(uses_permitted, use_name)</span>
+<span id="cb4-18"><a href="#cb4-18" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb4-19"><a href="#cb4-19" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb4-20"><a href="#cb4-20" aria-hidden="true" tabindex="-1"></a>    separated_uses[[i]] <span class="ot">&lt;-</span> filtered_columns</span>
+<span id="cb4-21"><a href="#cb4-21" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb4-22"><a href="#cb4-22" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb4-23"><a href="#cb4-23" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb4-24"><a href="#cb4-24" aria-hidden="true" tabindex="-1"></a>  <span class="co"># start with a bare list for the features data to fill</span></span>
+<span id="cb4-25"><a href="#cb4-25" aria-hidden="true" tabindex="-1"></a>  features_list <span class="ot">&lt;-</span> <span class="fu">list</span>(<span class="at">type =</span> <span class="st">"Feature"</span>, </span>
+<span id="cb4-26"><a href="#cb4-26" aria-hidden="true" tabindex="-1"></a>                        <span class="at">properties =</span> <span class="fu">list</span>(),</span>
+<span id="cb4-27"><a href="#cb4-27" aria-hidden="true" tabindex="-1"></a>                        <span class="at">geometry =</span> <span class="fu">list</span>())</span>
+<span id="cb4-28"><a href="#cb4-28" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb4-29"><a href="#cb4-29" aria-hidden="true" tabindex="-1"></a>  <span class="co"># add the properties</span></span>
+<span id="cb4-30"><a href="#cb4-30" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb4-31"><a href="#cb4-31" aria-hidden="true" tabindex="-1"></a>  <span class="co"># dist_name</span></span>
+<span id="cb4-32"><a href="#cb4-32" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (<span class="sc">!</span><span class="fu">is.na</span>(atlas_row_df[[<span class="dv">1</span>,<span class="st">"dist_name"</span>]])){</span>
+<span id="cb4-33"><a href="#cb4-33" aria-hidden="true" tabindex="-1"></a>    features_list<span class="sc">$</span>properties[[<span class="st">"dist_name"</span>]] <span class="ot">&lt;-</span> atlas_row_df[[<span class="dv">1</span>,<span class="st">"dist_name"</span>]]</span>
+<span id="cb4-34"><a href="#cb4-34" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb4-35"><a href="#cb4-35" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb4-36"><a href="#cb4-36" aria-hidden="true" tabindex="-1"></a>  <span class="co"># dist_abbr</span></span>
+<span id="cb4-37"><a href="#cb4-37" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (<span class="sc">!</span><span class="fu">is.na</span>(atlas_row_df[[<span class="dv">1</span>,<span class="st">"dist_abbr"</span>]])){</span>
+<span id="cb4-38"><a href="#cb4-38" aria-hidden="true" tabindex="-1"></a>    features_list<span class="sc">$</span>properties[[<span class="st">"dist_abbr"</span>]] <span class="ot">&lt;-</span> atlas_row_df[[<span class="dv">1</span>,<span class="st">"dist_abbr"</span>]]</span>
+<span id="cb4-39"><a href="#cb4-39" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb4-40"><a href="#cb4-40" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb4-41"><a href="#cb4-41" aria-hidden="true" tabindex="-1"></a>  <span class="co"># planned_dev</span></span>
+<span id="cb4-42"><a href="#cb4-42" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (<span class="fu">is.na</span>(atlas_row_df[[<span class="dv">1</span>,<span class="st">"dist_abbr"</span>]])){</span>
+<span id="cb4-43"><a href="#cb4-43" aria-hidden="true" tabindex="-1"></a>    features_list<span class="sc">$</span>properties<span class="sc">$</span>planned_dev <span class="ot">&lt;-</span> <span class="cn">FALSE</span></span>
+<span id="cb4-44"><a href="#cb4-44" aria-hidden="true" tabindex="-1"></a>  } <span class="cf">else</span> <span class="cf">if</span> (atlas_row_df[[<span class="dv">1</span>,<span class="st">"dist_abbr"</span>]] <span class="sc">==</span> <span class="st">"PD"</span> <span class="sc">|</span> atlas_row_df[[<span class="dv">1</span>,<span class="st">"dist_abbr"</span>]] <span class="sc">==</span> <span class="st">"PRD"</span>){</span>
+<span id="cb4-45"><a href="#cb4-45" aria-hidden="true" tabindex="-1"></a>    features_list<span class="sc">$</span>properties<span class="sc">$</span>planned_dev <span class="ot">&lt;-</span> <span class="cn">TRUE</span></span>
+<span id="cb4-46"><a href="#cb4-46" aria-hidden="true" tabindex="-1"></a>  } <span class="cf">else</span>{</span>
+<span id="cb4-47"><a href="#cb4-47" aria-hidden="true" tabindex="-1"></a>    features_list<span class="sc">$</span>properties<span class="sc">$</span>planned_dev <span class="ot">&lt;-</span> <span class="cn">FALSE</span></span>
+<span id="cb4-48"><a href="#cb4-48" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb4-49"><a href="#cb4-49" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb4-50"><a href="#cb4-50" aria-hidden="true" tabindex="-1"></a>  <span class="co"># overlay</span></span>
+<span id="cb4-51"><a href="#cb4-51" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (<span class="fu">is.na</span>(atlas_row_df[[<span class="dv">1</span>,<span class="st">"overlay"</span>]])){</span>
+<span id="cb4-52"><a href="#cb4-52" aria-hidden="true" tabindex="-1"></a>    features_list<span class="sc">$</span>properties<span class="sc">$</span>overlay <span class="ot">&lt;-</span> <span class="cn">FALSE</span></span>
+<span id="cb4-53"><a href="#cb4-53" aria-hidden="true" tabindex="-1"></a>  } <span class="cf">else</span> <span class="cf">if</span> (atlas_row_df[[<span class="dv">1</span>,<span class="st">"overlay"</span>]] <span class="sc">==</span> <span class="st">"No"</span>){</span>
+<span id="cb4-54"><a href="#cb4-54" aria-hidden="true" tabindex="-1"></a>    features_list<span class="sc">$</span>properties<span class="sc">$</span>overlay <span class="ot">&lt;-</span> <span class="cn">FALSE</span></span>
+<span id="cb4-55"><a href="#cb4-55" aria-hidden="true" tabindex="-1"></a>  } <span class="cf">else</span>{</span>
+<span id="cb4-56"><a href="#cb4-56" aria-hidden="true" tabindex="-1"></a>    features_list<span class="sc">$</span>properties<span class="sc">$</span>overlay <span class="ot">&lt;-</span> <span class="cn">TRUE</span></span>
+<span id="cb4-57"><a href="#cb4-57" aria-hidden="true" tabindex="-1"></a>    <span class="fu">return</span>(features_list)</span>
+<span id="cb4-58"><a href="#cb4-58" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb4-59"><a href="#cb4-59" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb4-60"><a href="#cb4-60" aria-hidden="true" tabindex="-1"></a>  <span class="co"># res_uses</span></span>
+<span id="cb4-61"><a href="#cb4-61" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (<span class="fu">length</span>(uses_permitted) <span class="sc">&gt;</span> <span class="dv">0</span>){</span>
+<span id="cb4-62"><a href="#cb4-62" aria-hidden="true" tabindex="-1"></a>    features_list<span class="sc">$</span>properties<span class="sc">$</span>res_uses <span class="ot">&lt;-</span> uses_permitted</span>
+<span id="cb4-63"><a href="#cb4-63" aria-hidden="true" tabindex="-1"></a>  } <span class="cf">else</span> {</span>
+<span id="cb4-64"><a href="#cb4-64" aria-hidden="true" tabindex="-1"></a>    features_list<span class="sc">$</span>properties<span class="sc">$</span>res_uses <span class="ot">&lt;-</span> <span class="st">"none"</span></span>
+<span id="cb4-65"><a href="#cb4-65" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb4-66"><a href="#cb4-66" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb4-67"><a href="#cb4-67" aria-hidden="true" tabindex="-1"></a>  <span class="co"># constraints</span></span>
+<span id="cb4-68"><a href="#cb4-68" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb4-69"><a href="#cb4-69" aria-hidden="true" tabindex="-1"></a>  <span class="co"># filter col_descriptions to just the constraint columns this district has</span></span>
+<span id="cb4-70"><a href="#cb4-70" aria-hidden="true" tabindex="-1"></a>  constraints_df <span class="ot">&lt;-</span> col_descriptions <span class="sc">|&gt;</span></span>
+<span id="cb4-71"><a href="#cb4-71" aria-hidden="true" tabindex="-1"></a>    <span class="fu">filter</span>(col_name <span class="sc">%in%</span> <span class="fu">gsub</span>(<span class="st">"_[^_]+$"</span>,<span class="st">""</span>,<span class="fu">names</span>(atlas_row_df)))</span>
+<span id="cb4-72"><a href="#cb4-72" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb4-73"><a href="#cb4-73" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (<span class="fu">nrow</span>(constraints_df) <span class="sc">&gt;</span> <span class="dv">0</span>){</span>
+<span id="cb4-74"><a href="#cb4-74" aria-hidden="true" tabindex="-1"></a>    features_list<span class="sc">$</span>properties<span class="sc">$</span>constraints <span class="ot">&lt;-</span> <span class="fu">make_constraints</span>(constraints_df, separated_uses)</span>
+<span id="cb4-75"><a href="#cb4-75" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb4-76"><a href="#cb4-76" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb4-77"><a href="#cb4-77" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (<span class="fu">length</span>(features_list<span class="sc">$</span>properties<span class="sc">$</span>constraints) <span class="sc">==</span> <span class="dv">0</span>){</span>
+<span id="cb4-78"><a href="#cb4-78" aria-hidden="true" tabindex="-1"></a>    features_list<span class="sc">$</span>properties<span class="sc">$</span>constraints <span class="ot">&lt;-</span> <span class="cn">NULL</span></span>
+<span id="cb4-79"><a href="#cb4-79" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb4-80"><a href="#cb4-80" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb4-81"><a href="#cb4-81" aria-hidden="true" tabindex="-1"></a>  <span class="fu">return</span>(features_list)</span>
+<span id="cb4-82"><a href="#cb4-82" aria-hidden="true" tabindex="-1"></a>}</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+</section>
+<section id="make_constraints" class="level2">
+<h2 class="anchored" data-anchor-id="make_constraints">make_constraints()</h2>
+<p>This function organizes the list of constraints for a features list.</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb5"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>make_constraints <span class="ot">&lt;-</span> <span class="cf">function</span>(constraints_df, separated_uses){</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>  constraints_list <span class="ot">&lt;-</span> <span class="fu">list</span>()</span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>  <span class="cf">for</span> (i <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span><span class="fu">nrow</span>(constraints_df)){</span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>    constraint_name <span class="ot">&lt;-</span> constraints_df<span class="sc">$</span>col_name[[i]]</span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>    min_or_max <span class="ot">&lt;-</span> constraints_df<span class="sc">$</span>min_or_max[[i]]</span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (min_or_max <span class="sc">==</span> <span class="st">"min"</span>){</span>
+<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a>      minmax_vals <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="st">"min_val"</span>,<span class="st">"max_val"</span>)</span>
+<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a>    } <span class="cf">else</span>{</span>
+<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a>      minmax_vals <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="st">"max_val"</span>,<span class="st">"min_val"</span>)</span>
+<span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb5-13"><a href="#cb5-13" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb5-14"><a href="#cb5-14" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> (minmax_loop <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span><span class="dv">2</span>){</span>
+<span id="cb5-15"><a href="#cb5-15" aria-hidden="true" tabindex="-1"></a>      </span>
+<span id="cb5-16"><a href="#cb5-16" aria-hidden="true" tabindex="-1"></a>      <span class="cf">if</span> (minmax_loop <span class="sc">==</span> <span class="dv">2</span>){</span>
+<span id="cb5-17"><a href="#cb5-17" aria-hidden="true" tabindex="-1"></a>        new_constraint_name <span class="ot">&lt;-</span> <span class="fu">paste0</span>(constraint_name, <span class="st">"_minmax"</span>)</span>
+<span id="cb5-18"><a href="#cb5-18" aria-hidden="true" tabindex="-1"></a>      } <span class="cf">else</span>{</span>
+<span id="cb5-19"><a href="#cb5-19" aria-hidden="true" tabindex="-1"></a>        new_constraint_name <span class="ot">&lt;-</span> constraint_name</span>
+<span id="cb5-20"><a href="#cb5-20" aria-hidden="true" tabindex="-1"></a>      }</span>
+<span id="cb5-21"><a href="#cb5-21" aria-hidden="true" tabindex="-1"></a>      </span>
+<span id="cb5-22"><a href="#cb5-22" aria-hidden="true" tabindex="-1"></a>      filtered_separated_uses <span class="ot">&lt;-</span> separated_uses</span>
+<span id="cb5-23"><a href="#cb5-23" aria-hidden="true" tabindex="-1"></a>      <span class="cf">for</span> (j <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span><span class="fu">length</span>(separated_uses)){</span>
+<span id="cb5-24"><a href="#cb5-24" aria-hidden="true" tabindex="-1"></a>        constraint_data <span class="ot">&lt;-</span> separated_uses[[j]]</span>
+<span id="cb5-25"><a href="#cb5-25" aria-hidden="true" tabindex="-1"></a>        filtered_data <span class="ot">&lt;-</span> constraint_data <span class="sc">|&gt;</span></span>
+<span id="cb5-26"><a href="#cb5-26" aria-hidden="true" tabindex="-1"></a>          <span class="fu">select</span>(<span class="fu">grep</span>(constraint_name,<span class="fu">names</span>(constraint_data), <span class="at">value =</span> <span class="cn">TRUE</span>))</span>
+<span id="cb5-27"><a href="#cb5-27" aria-hidden="true" tabindex="-1"></a>        </span>
+<span id="cb5-28"><a href="#cb5-28" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> (minmax_loop <span class="sc">==</span> <span class="dv">1</span>){</span>
+<span id="cb5-29"><a href="#cb5-29" aria-hidden="true" tabindex="-1"></a>          filtered_data <span class="ot">&lt;-</span> filtered_data <span class="sc">|&gt;</span> </span>
+<span id="cb5-30"><a href="#cb5-30" aria-hidden="true" tabindex="-1"></a>            <span class="fu">select</span>(<span class="sc">!</span><span class="fu">grep</span>(<span class="st">"minmax"</span>,<span class="fu">names</span>(filtered_data), <span class="at">value =</span> <span class="cn">TRUE</span>))</span>
+<span id="cb5-31"><a href="#cb5-31" aria-hidden="true" tabindex="-1"></a>        } <span class="cf">else</span> {</span>
+<span id="cb5-32"><a href="#cb5-32" aria-hidden="true" tabindex="-1"></a>          filtered_data <span class="ot">&lt;-</span> filtered_data <span class="sc">|&gt;</span> </span>
+<span id="cb5-33"><a href="#cb5-33" aria-hidden="true" tabindex="-1"></a>            <span class="fu">select</span>(<span class="fu">grep</span>(<span class="st">"minmax"</span>,<span class="fu">names</span>(filtered_data), <span class="at">value =</span> <span class="cn">TRUE</span>))</span>
+<span id="cb5-34"><a href="#cb5-34" aria-hidden="true" tabindex="-1"></a>        }</span>
+<span id="cb5-35"><a href="#cb5-35" aria-hidden="true" tabindex="-1"></a>        </span>
+<span id="cb5-36"><a href="#cb5-36" aria-hidden="true" tabindex="-1"></a>        <span class="co"># if filtered_data is blank or NA, </span></span>
+<span id="cb5-37"><a href="#cb5-37" aria-hidden="true" tabindex="-1"></a>        <span class="co"># it means there is no value for that constraint</span></span>
+<span id="cb5-38"><a href="#cb5-38" aria-hidden="true" tabindex="-1"></a>        <span class="co"># we make either of those scenarios NULL so that it gets the proper use groupings</span></span>
+<span id="cb5-39"><a href="#cb5-39" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> (<span class="fu">ncol</span>(filtered_data) <span class="sc">==</span> <span class="dv">0</span>){</span>
+<span id="cb5-40"><a href="#cb5-40" aria-hidden="true" tabindex="-1"></a>          filtered_data <span class="ot">&lt;-</span> <span class="cn">NA</span></span>
+<span id="cb5-41"><a href="#cb5-41" aria-hidden="true" tabindex="-1"></a>        } <span class="cf">else</span> <span class="cf">if</span> (<span class="fu">rowSums</span>(<span class="fu">is.na</span>(filtered_data)) <span class="sc">==</span> <span class="fu">ncol</span>(filtered_data)){</span>
+<span id="cb5-42"><a href="#cb5-42" aria-hidden="true" tabindex="-1"></a>          filtered_data <span class="ot">&lt;-</span> <span class="cn">NA</span></span>
+<span id="cb5-43"><a href="#cb5-43" aria-hidden="true" tabindex="-1"></a>        }</span>
+<span id="cb5-44"><a href="#cb5-44" aria-hidden="true" tabindex="-1"></a>        </span>
+<span id="cb5-45"><a href="#cb5-45" aria-hidden="true" tabindex="-1"></a>        </span>
+<span id="cb5-46"><a href="#cb5-46" aria-hidden="true" tabindex="-1"></a>        </span>
+<span id="cb5-47"><a href="#cb5-47" aria-hidden="true" tabindex="-1"></a>        filtered_separated_uses[[j]] <span class="ot">&lt;-</span> filtered_data</span>
+<span id="cb5-48"><a href="#cb5-48" aria-hidden="true" tabindex="-1"></a>      }</span>
+<span id="cb5-49"><a href="#cb5-49" aria-hidden="true" tabindex="-1"></a>      </span>
+<span id="cb5-50"><a href="#cb5-50" aria-hidden="true" tabindex="-1"></a>      <span class="co"># Create a unique key for each data frame by serializing to a character string</span></span>
+<span id="cb5-51"><a href="#cb5-51" aria-hidden="true" tabindex="-1"></a>      key_vec <span class="ot">&lt;-</span> <span class="fu">sapply</span>(filtered_separated_uses, <span class="cf">function</span>(x) <span class="fu">paste</span>(<span class="fu">serialize</span>(x, <span class="cn">NULL</span>), <span class="at">collapse =</span> <span class="st">"-"</span>))</span>
+<span id="cb5-52"><a href="#cb5-52" aria-hidden="true" tabindex="-1"></a>      </span>
+<span id="cb5-53"><a href="#cb5-53" aria-hidden="true" tabindex="-1"></a>      <span class="co"># Group the list element names by the serialization key</span></span>
+<span id="cb5-54"><a href="#cb5-54" aria-hidden="true" tabindex="-1"></a>      grouped_uses <span class="ot">&lt;-</span> <span class="fu">split</span>(<span class="fu">names</span>(filtered_separated_uses), key_vec)</span>
+<span id="cb5-55"><a href="#cb5-55" aria-hidden="true" tabindex="-1"></a>      </span>
+<span id="cb5-56"><a href="#cb5-56" aria-hidden="true" tabindex="-1"></a>      rule_list <span class="ot">&lt;-</span> <span class="fu">list</span>()</span>
+<span id="cb5-57"><a href="#cb5-57" aria-hidden="true" tabindex="-1"></a>      grouped_uses_count <span class="ot">&lt;-</span> <span class="fu">length</span>(grouped_uses)</span>
+<span id="cb5-58"><a href="#cb5-58" aria-hidden="true" tabindex="-1"></a>      <span class="cf">for</span> (use_group <span class="cf">in</span> grouped_uses){</span>
+<span id="cb5-59"><a href="#cb5-59" aria-hidden="true" tabindex="-1"></a>        </span>
+<span id="cb5-60"><a href="#cb5-60" aria-hidden="true" tabindex="-1"></a>        conditions_string <span class="ot">&lt;-</span> <span class="fu">paste0</span>(<span class="st">"bldg_type == "</span>, use_group)</span>
+<span id="cb5-61"><a href="#cb5-61" aria-hidden="true" tabindex="-1"></a>        use_condition <span class="ot">&lt;-</span> <span class="fu">paste</span>(conditions_string, <span class="at">collapse =</span> <span class="st">" or "</span>)</span>
+<span id="cb5-62"><a href="#cb5-62" aria-hidden="true" tabindex="-1"></a>        </span>
+<span id="cb5-63"><a href="#cb5-63" aria-hidden="true" tabindex="-1"></a>        one_use <span class="ot">&lt;-</span> use_group[[<span class="dv">1</span>]]</span>
+<span id="cb5-64"><a href="#cb5-64" aria-hidden="true" tabindex="-1"></a>        use_df <span class="ot">&lt;-</span> filtered_separated_uses[[one_use]]</span>
+<span id="cb5-65"><a href="#cb5-65" aria-hidden="true" tabindex="-1"></a>        </span>
+<span id="cb5-66"><a href="#cb5-66" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> (<span class="fu">class</span>(use_df)[[<span class="dv">1</span>]] <span class="sc">==</span> <span class="st">"logical"</span>){</span>
+<span id="cb5-67"><a href="#cb5-67" aria-hidden="true" tabindex="-1"></a>          grouped_uses_count <span class="ot">&lt;-</span> grouped_uses_count <span class="sc">-</span> <span class="dv">1</span></span>
+<span id="cb5-68"><a href="#cb5-68" aria-hidden="true" tabindex="-1"></a>          <span class="cf">next</span></span>
+<span id="cb5-69"><a href="#cb5-69" aria-hidden="true" tabindex="-1"></a>        }</span>
+<span id="cb5-70"><a href="#cb5-70" aria-hidden="true" tabindex="-1"></a>        </span>
+<span id="cb5-71"><a href="#cb5-71" aria-hidden="true" tabindex="-1"></a>        organized_rules <span class="ot">&lt;-</span> <span class="fu">organize_rules</span>(use_df, new_constraint_name)</span>
+<span id="cb5-72"><a href="#cb5-72" aria-hidden="true" tabindex="-1"></a>        </span>
+<span id="cb5-73"><a href="#cb5-73" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> (grouped_uses_count <span class="sc">&gt;</span> <span class="dv">1</span> <span class="sc">&amp;</span> <span class="sc">!</span><span class="fu">is.null</span>(organized_rules)){</span>
+<span id="cb5-74"><a href="#cb5-74" aria-hidden="true" tabindex="-1"></a>          </span>
+<span id="cb5-75"><a href="#cb5-75" aria-hidden="true" tabindex="-1"></a>          <span class="cf">for</span> (rule_num <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span><span class="fu">length</span>(organized_rules)){</span>
+<span id="cb5-76"><a href="#cb5-76" aria-hidden="true" tabindex="-1"></a>            organized_rules[[rule_num]]<span class="sc">$</span>condition <span class="ot">&lt;-</span> <span class="fu">append</span>(organized_rules[[rule_num]]<span class="sc">$</span>condition, <span class="fu">list</span>(use_condition))</span>
+<span id="cb5-77"><a href="#cb5-77" aria-hidden="true" tabindex="-1"></a>          }</span>
+<span id="cb5-78"><a href="#cb5-78" aria-hidden="true" tabindex="-1"></a>        }</span>
+<span id="cb5-79"><a href="#cb5-79" aria-hidden="true" tabindex="-1"></a>        </span>
+<span id="cb5-80"><a href="#cb5-80" aria-hidden="true" tabindex="-1"></a>        rule_list <span class="ot">&lt;-</span> <span class="fu">append</span>(rule_list, organized_rules)</span>
+<span id="cb5-81"><a href="#cb5-81" aria-hidden="true" tabindex="-1"></a>      }</span>
+<span id="cb5-82"><a href="#cb5-82" aria-hidden="true" tabindex="-1"></a>      </span>
+<span id="cb5-83"><a href="#cb5-83" aria-hidden="true" tabindex="-1"></a>      <span class="co"># only add the organized rule list to the constraints list if it has values</span></span>
+<span id="cb5-84"><a href="#cb5-84" aria-hidden="true" tabindex="-1"></a>      <span class="cf">if</span> (<span class="fu">length</span>(rule_list) <span class="sc">&gt;</span> <span class="dv">0</span>){</span>
+<span id="cb5-85"><a href="#cb5-85" aria-hidden="true" tabindex="-1"></a>        constraints_list[[constraint_name]][[minmax_vals[[minmax_loop]]]] <span class="ot">&lt;-</span> rule_list</span>
+<span id="cb5-86"><a href="#cb5-86" aria-hidden="true" tabindex="-1"></a>      } </span>
+<span id="cb5-87"><a href="#cb5-87" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb5-88"><a href="#cb5-88" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb5-89"><a href="#cb5-89" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb5-90"><a href="#cb5-90" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb5-91"><a href="#cb5-91" aria-hidden="true" tabindex="-1"></a>  <span class="fu">return</span>(constraints_list)</span>
+<span id="cb5-92"><a href="#cb5-92" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb5-93"><a href="#cb5-93" aria-hidden="true" tabindex="-1"></a>}</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+</section>
+<section id="organize_rules" class="level2">
+<h2 class="anchored" data-anchor-id="organize_rules">organize_rules()</h2>
+<p>This function organizes the specific conditions for a constraint value.</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb6"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>organize_rules <span class="ot">&lt;-</span> <span class="cf">function</span>(df_with_rules, constraint_name){</span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>  <span class="co"># this is to check if the df_with_rules is NA</span></span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>  <span class="co"># which means there was no value recorded</span></span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (<span class="fu">class</span>(df_with_rules)[[<span class="dv">1</span>]] <span class="sc">==</span> <span class="st">"logical"</span>){</span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>    <span class="fu">return</span>(<span class="cn">NULL</span>)</span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a>  <span class="co"># find out how many rules there are</span></span>
+<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a>  counter <span class="ot">&lt;-</span> <span class="dv">1</span></span>
+<span id="cb6-11"><a href="#cb6-11" aria-hidden="true" tabindex="-1"></a>  df <span class="ot">&lt;-</span> df_with_rules[<span class="dv">1</span>,<span class="fu">grep</span>(<span class="fu">paste0</span>(<span class="st">"rule"</span>, counter), <span class="fu">names</span>(df_with_rules))]</span>
+<span id="cb6-12"><a href="#cb6-12" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb6-13"><a href="#cb6-13" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb6-14"><a href="#cb6-14" aria-hidden="true" tabindex="-1"></a>  <span class="cf">while</span> (<span class="fu">ncol</span>(df) <span class="sc">&gt;</span> <span class="dv">0</span>){</span>
+<span id="cb6-15"><a href="#cb6-15" aria-hidden="true" tabindex="-1"></a>    counter <span class="ot">&lt;-</span> counter <span class="sc">+</span> <span class="dv">1</span></span>
+<span id="cb6-16"><a href="#cb6-16" aria-hidden="true" tabindex="-1"></a>    df <span class="ot">&lt;-</span> df_with_rules[<span class="dv">1</span> ,<span class="fu">grep</span>(<span class="fu">paste0</span>(<span class="st">"rule"</span>, counter), <span class="fu">names</span>(df_with_rules))]</span>
+<span id="cb6-17"><a href="#cb6-17" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb6-18"><a href="#cb6-18" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb6-19"><a href="#cb6-19" aria-hidden="true" tabindex="-1"></a>  rules_count <span class="ot">&lt;-</span> counter <span class="sc">-</span> <span class="dv">1</span></span>
+<span id="cb6-20"><a href="#cb6-20" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb6-21"><a href="#cb6-21" aria-hidden="true" tabindex="-1"></a>  df_just_rules <span class="ot">&lt;-</span> df_with_rules[<span class="dv">1</span> ,<span class="fu">grep</span>(<span class="fu">paste0</span>(constraint_name, <span class="st">"_rule"</span>), <span class="fu">names</span>(df_with_rules))]</span>
+<span id="cb6-22"><a href="#cb6-22" aria-hidden="true" tabindex="-1"></a>  df_no_rules <span class="ot">&lt;-</span> df_with_rules[<span class="dv">1</span> ,constraint_name]</span>
+<span id="cb6-23"><a href="#cb6-23" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb6-24"><a href="#cb6-24" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (<span class="sc">!</span><span class="fu">is.na</span>(df_no_rules[[<span class="dv">1</span>,<span class="dv">1</span>]])){</span>
+<span id="cb6-25"><a href="#cb6-25" aria-hidden="true" tabindex="-1"></a>    rule_list <span class="ot">&lt;-</span> <span class="fu">list</span>(<span class="fu">list</span>(<span class="at">expression =</span> <span class="fu">list</span>(df_with_rules[<span class="dv">1</span>,<span class="dv">1</span>][[<span class="dv">1</span>]])))</span>
+<span id="cb6-26"><a href="#cb6-26" aria-hidden="true" tabindex="-1"></a>    <span class="fu">return</span>(rule_list)</span>
+<span id="cb6-27"><a href="#cb6-27" aria-hidden="true" tabindex="-1"></a>  } <span class="cf">else</span> <span class="cf">if</span> (<span class="fu">rowSums</span>(<span class="fu">is.na</span>(df_just_rules)) <span class="sc">==</span> <span class="fu">ncol</span>(df_just_rules)){</span>
+<span id="cb6-28"><a href="#cb6-28" aria-hidden="true" tabindex="-1"></a>    <span class="fu">return</span>(<span class="cn">NULL</span>)</span>
+<span id="cb6-29"><a href="#cb6-29" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb6-30"><a href="#cb6-30" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb6-31"><a href="#cb6-31" aria-hidden="true" tabindex="-1"></a>  <span class="co"># loop through each rule and make it a list</span></span>
+<span id="cb6-32"><a href="#cb6-32" aria-hidden="true" tabindex="-1"></a>  all_rule_list <span class="ot">&lt;-</span> <span class="fu">list</span>()</span>
+<span id="cb6-33"><a href="#cb6-33" aria-hidden="true" tabindex="-1"></a>  <span class="cf">for</span> (i <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span>rules_count){</span>
+<span id="cb6-34"><a href="#cb6-34" aria-hidden="true" tabindex="-1"></a>    <span class="co"># create a list that we will keep adding to</span></span>
+<span id="cb6-35"><a href="#cb6-35" aria-hidden="true" tabindex="-1"></a>    rule_list <span class="ot">&lt;-</span> <span class="fu">list</span>()</span>
+<span id="cb6-36"><a href="#cb6-36" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb6-37"><a href="#cb6-37" aria-hidden="true" tabindex="-1"></a>    <span class="co"># New df with an isolated rule</span></span>
+<span id="cb6-38"><a href="#cb6-38" aria-hidden="true" tabindex="-1"></a>    rule_df <span class="ot">&lt;-</span> df_with_rules[ ,<span class="fu">grep</span>(<span class="fu">paste0</span>(constraint_name,<span class="st">"_rule"</span>, i), <span class="fu">names</span>(df_with_rules))]</span>
+<span id="cb6-39"><a href="#cb6-39" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb6-40"><a href="#cb6-40" aria-hidden="true" tabindex="-1"></a>    <span class="co"># if it has one of the fields, we will add it to rule_list</span></span>
+<span id="cb6-41"><a href="#cb6-41" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb6-42"><a href="#cb6-42" aria-hidden="true" tabindex="-1"></a>    logical_operator <span class="ot">&lt;-</span> <span class="cn">NULL</span></span>
+<span id="cb6-43"><a href="#cb6-43" aria-hidden="true" tabindex="-1"></a>    <span class="co"># logical_operator</span></span>
+<span id="cb6-44"><a href="#cb6-44" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (<span class="fu">sum</span>(<span class="fu">grep</span>(<span class="st">"logical_operator"</span>, <span class="fu">names</span>(rule_df))) <span class="sc">&gt;</span> <span class="dv">0</span> ){</span>
+<span id="cb6-45"><a href="#cb6-45" aria-hidden="true" tabindex="-1"></a>      <span class="co"># assign value to logical_operator</span></span>
+<span id="cb6-46"><a href="#cb6-46" aria-hidden="true" tabindex="-1"></a>      logical_operator <span class="ot">&lt;-</span> rule_df[[<span class="dv">1</span>, <span class="fu">grep</span>(<span class="st">"logical_operator"</span>,<span class="fu">names</span>(rule_df))]]</span>
+<span id="cb6-47"><a href="#cb6-47" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb6-48"><a href="#cb6-48" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb6-49"><a href="#cb6-49" aria-hidden="true" tabindex="-1"></a>    <span class="co"># conditions</span></span>
+<span id="cb6-50"><a href="#cb6-50" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (<span class="fu">sum</span>(<span class="fu">grep</span>(<span class="st">"condition"</span>, <span class="fu">names</span>(rule_df))) <span class="sc">&gt;</span> <span class="dv">0</span> ){</span>
+<span id="cb6-51"><a href="#cb6-51" aria-hidden="true" tabindex="-1"></a>      <span class="co"># make a df to assign multiple values to the array of conditions</span></span>
+<span id="cb6-52"><a href="#cb6-52" aria-hidden="true" tabindex="-1"></a>      condition_df <span class="ot">&lt;-</span> rule_df[ , <span class="fu">grep</span>(<span class="st">"condition"</span>,<span class="fu">names</span>(rule_df))]</span>
+<span id="cb6-53"><a href="#cb6-53" aria-hidden="true" tabindex="-1"></a>      </span>
+<span id="cb6-54"><a href="#cb6-54" aria-hidden="true" tabindex="-1"></a>      <span class="cf">if</span> (<span class="fu">is.null</span>(logical_operator)){</span>
+<span id="cb6-55"><a href="#cb6-55" aria-hidden="true" tabindex="-1"></a>        condition_value <span class="ot">&lt;-</span> condition_df[[<span class="dv">1</span>,<span class="dv">1</span>]]</span>
+<span id="cb6-56"><a href="#cb6-56" aria-hidden="true" tabindex="-1"></a>      } <span class="cf">else</span>{</span>
+<span id="cb6-57"><a href="#cb6-57" aria-hidden="true" tabindex="-1"></a>        condition_list <span class="ot">&lt;-</span> <span class="fu">c</span>()</span>
+<span id="cb6-58"><a href="#cb6-58" aria-hidden="true" tabindex="-1"></a>        <span class="cf">for</span> (j <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span><span class="fu">ncol</span>(condition_df)){</span>
+<span id="cb6-59"><a href="#cb6-59" aria-hidden="true" tabindex="-1"></a>          condition_list <span class="ot">&lt;-</span> <span class="fu">c</span>(condition_list,condition_df[[<span class="dv">1</span>,j]])</span>
+<span id="cb6-60"><a href="#cb6-60" aria-hidden="true" tabindex="-1"></a>          condition_value <span class="ot">&lt;-</span> <span class="fu">paste</span>(condition_list, <span class="at">collapse =</span> <span class="fu">paste0</span>(<span class="st">" "</span>, <span class="fu">tolower</span>(logical_operator), <span class="st">" "</span>))</span>
+<span id="cb6-61"><a href="#cb6-61" aria-hidden="true" tabindex="-1"></a>        }</span>
+<span id="cb6-62"><a href="#cb6-62" aria-hidden="true" tabindex="-1"></a>        </span>
+<span id="cb6-63"><a href="#cb6-63" aria-hidden="true" tabindex="-1"></a>      }</span>
+<span id="cb6-64"><a href="#cb6-64" aria-hidden="true" tabindex="-1"></a>      rule_list<span class="sc">$</span>condition <span class="ot">&lt;-</span> <span class="fu">append</span>(rule_list<span class="sc">$</span>condition,<span class="fu">list</span>(condition_value))</span>
+<span id="cb6-65"><a href="#cb6-65" aria-hidden="true" tabindex="-1"></a>      </span>
+<span id="cb6-66"><a href="#cb6-66" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb6-67"><a href="#cb6-67" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb6-68"><a href="#cb6-68" aria-hidden="true" tabindex="-1"></a>    <span class="co"># criterion</span></span>
+<span id="cb6-69"><a href="#cb6-69" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (<span class="fu">sum</span>(<span class="fu">grep</span>(<span class="st">"criterion"</span>, <span class="fu">names</span>(rule_df))) <span class="sc">&gt;</span> <span class="dv">0</span> ){</span>
+<span id="cb6-70"><a href="#cb6-70" aria-hidden="true" tabindex="-1"></a>      </span>
+<span id="cb6-71"><a href="#cb6-71" aria-hidden="true" tabindex="-1"></a>      criterion <span class="ot">&lt;-</span> rule_df[[<span class="dv">1</span>, <span class="fu">grep</span>(<span class="st">"criterion"</span>,<span class="fu">names</span>(rule_df))[<span class="dv">1</span>]]]</span>
+<span id="cb6-72"><a href="#cb6-72" aria-hidden="true" tabindex="-1"></a>      </span>
+<span id="cb6-73"><a href="#cb6-73" aria-hidden="true" tabindex="-1"></a>      <span class="cf">if</span> (criterion <span class="sc">==</span> <span class="st">"dependent"</span>){</span>
+<span id="cb6-74"><a href="#cb6-74" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> (<span class="fu">sum</span>(<span class="fu">grep</span>(<span class="st">"more_restrictive"</span>, <span class="fu">names</span>(rule_df))) <span class="sc">&gt;</span> <span class="dv">0</span> ){</span>
+<span id="cb6-75"><a href="#cb6-75" aria-hidden="true" tabindex="-1"></a>          rule_list<span class="sc">$</span>condition <span class="ot">&lt;-</span> <span class="fu">append</span>(rule_list<span class="sc">$</span>condition, rule_df[[<span class="dv">1</span>, <span class="fu">grep</span>(<span class="st">"more_restrictive"</span>,<span class="fu">names</span>(rule_df))[<span class="dv">1</span>]]])</span>
+<span id="cb6-76"><a href="#cb6-76" aria-hidden="true" tabindex="-1"></a>        } <span class="cf">else</span>{ <span class="co"># there is no explanation for some reason</span></span>
+<span id="cb6-77"><a href="#cb6-77" aria-hidden="true" tabindex="-1"></a>          rule_list<span class="sc">$</span>condition <span class="ot">&lt;-</span> <span class="fu">append</span>(rule_list<span class="sc">$</span>condition, <span class="st">"Special condition that wasn't stated"</span>)</span>
+<span id="cb6-78"><a href="#cb6-78" aria-hidden="true" tabindex="-1"></a>        }</span>
+<span id="cb6-79"><a href="#cb6-79" aria-hidden="true" tabindex="-1"></a>      } <span class="cf">else</span>{</span>
+<span id="cb6-80"><a href="#cb6-80" aria-hidden="true" tabindex="-1"></a>        rule_list<span class="sc">$</span>criterion <span class="ot">&lt;-</span> rule_df[[<span class="dv">1</span>, <span class="fu">grep</span>(<span class="st">"criterion"</span>,<span class="fu">names</span>(rule_df))[<span class="dv">1</span>]]]</span>
+<span id="cb6-81"><a href="#cb6-81" aria-hidden="true" tabindex="-1"></a>      }</span>
+<span id="cb6-82"><a href="#cb6-82" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb6-83"><a href="#cb6-83" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb6-84"><a href="#cb6-84" aria-hidden="true" tabindex="-1"></a>    <span class="co"># expression(s)</span></span>
+<span id="cb6-85"><a href="#cb6-85" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (<span class="fu">sum</span>(<span class="fu">grep</span>(<span class="st">"expression"</span>, <span class="fu">names</span>(rule_df))) <span class="sc">&gt;</span> <span class="dv">0</span> ){</span>
+<span id="cb6-86"><a href="#cb6-86" aria-hidden="true" tabindex="-1"></a>      <span class="co"># make a df to see if it is more than one expression and to extract data</span></span>
+<span id="cb6-87"><a href="#cb6-87" aria-hidden="true" tabindex="-1"></a>      df_expression <span class="ot">&lt;-</span> rule_df[ , <span class="fu">grep</span>(<span class="fu">paste0</span>(<span class="st">"expression"</span>), <span class="fu">names</span>(rule_df))]</span>
+<span id="cb6-88"><a href="#cb6-88" aria-hidden="true" tabindex="-1"></a>      </span>
+<span id="cb6-89"><a href="#cb6-89" aria-hidden="true" tabindex="-1"></a>      <span class="cf">for</span> (j <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span><span class="fu">ncol</span>(df_expression)){</span>
+<span id="cb6-90"><a href="#cb6-90" aria-hidden="true" tabindex="-1"></a>        rule_list<span class="sc">$</span>expression[[j]] <span class="ot">&lt;-</span> <span class="fu">as.character</span>(df_expression[[<span class="dv">1</span>,j]])</span>
+<span id="cb6-91"><a href="#cb6-91" aria-hidden="true" tabindex="-1"></a>      }</span>
+<span id="cb6-92"><a href="#cb6-92" aria-hidden="true" tabindex="-1"></a>      </span>
+<span id="cb6-93"><a href="#cb6-93" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb6-94"><a href="#cb6-94" aria-hidden="true" tabindex="-1"></a>    <span class="co"># add each rule list to the total rules list</span></span>
+<span id="cb6-95"><a href="#cb6-95" aria-hidden="true" tabindex="-1"></a>    all_rule_list[[i]] <span class="ot">&lt;-</span> rule_list</span>
+<span id="cb6-96"><a href="#cb6-96" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb6-97"><a href="#cb6-97" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb6-98"><a href="#cb6-98" aria-hidden="true" tabindex="-1"></a>  <span class="fu">return</span>(all_rule_list)</span>
+<span id="cb6-99"><a href="#cb6-99" aria-hidden="true" tabindex="-1"></a>}</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+</section>
+<section id="write_list_as_json" class="level2">
+<h2 class="anchored" data-anchor-id="write_list_as_json">write_list_as_json()</h2>
+<p>This function takes a list, translates it to json format, and writes it to a specified file.</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb7"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>write_list_as_json <span class="ot">&lt;-</span> <span class="cf">function</span>(list, file_directory){</span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>  json <span class="ot">&lt;-</span> <span class="fu">toJSON</span>(list)</span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">write</span>(json, file_directory)</span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>}</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+</section>
+<section id="add_geometry_to_ozfs" class="level2">
+<h2 class="anchored" data-anchor-id="add_geometry_to_ozfs">add_geometry_to_ozfs()</h2>
+<p>This function takes the newly created zoning list and adds the geometry to it from the geometry file.</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb8"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>add_geometry_to_ozfs <span class="ot">&lt;-</span> <span class="cf">function</span>(boundary_file_path, ozfs_list){</span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>  boundaries <span class="ot">&lt;-</span> rjson<span class="sc">::</span><span class="fu">fromJSON</span>(<span class="at">file =</span> boundary_file_path)</span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>  <span class="cf">for</span> (i <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span><span class="fu">length</span>(ozfs_list<span class="sc">$</span>features)){</span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a>    zoning_dist_abbr <span class="ot">&lt;-</span> ozfs_list<span class="sc">$</span>features[[i]]<span class="sc">$</span>properties<span class="sc">$</span>dist_abbr</span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a>    city <span class="ot">&lt;-</span> ozfs_list<span class="sc">$</span>features[[i]]<span class="sc">$</span>properties<span class="sc">$</span>muni_name</span>
+<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> (j <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span><span class="fu">length</span>(boundaries<span class="sc">$</span>features)){</span>
+<span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a>      boundary_dist_name <span class="ot">&lt;-</span> boundaries<span class="sc">$</span>features[[j]]<span class="sc">$</span>properties<span class="sc">$</span><span class="st">`</span><span class="at">Abbreviated District Name</span><span class="st">`</span></span>
+<span id="cb8-9"><a href="#cb8-9" aria-hidden="true" tabindex="-1"></a>      <span class="cf">if</span> (zoning_dist_abbr <span class="sc">==</span> boundary_dist_name){</span>
+<span id="cb8-10"><a href="#cb8-10" aria-hidden="true" tabindex="-1"></a>        ozfs_list<span class="sc">$</span>features[[i]]<span class="sc">$</span>geometry <span class="ot">&lt;-</span> boundaries<span class="sc">$</span>features[[j]]<span class="sc">$</span>geometry</span>
+<span id="cb8-11"><a href="#cb8-11" aria-hidden="true" tabindex="-1"></a>      }</span>
+<span id="cb8-12"><a href="#cb8-12" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb8-13"><a href="#cb8-13" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb8-14"><a href="#cb8-14" aria-hidden="true" tabindex="-1"></a>  ozfs_list</span>
+<span id="cb8-15"><a href="#cb8-15" aria-hidden="true" tabindex="-1"></a>}</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+</section>
+<section id="add_extra_overlays" class="level2">
+<h2 class="anchored" data-anchor-id="add_extra_overlays">add_extra_overlays()</h2>
+<p>This function takes an file with extra overlays not listed in the main zoning files and adds them to the .zoning list.</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb9"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>add_extra_overlays <span class="ot">&lt;-</span> <span class="cf">function</span>(extra_overlay_geom_file, ozfs_list){</span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>  extra_overlays <span class="ot">&lt;-</span> <span class="fu">fromJSON</span>(<span class="at">file =</span> extra_overlay_geom_file)</span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a>  city_idx <span class="ot">&lt;-</span> <span class="fu">c</span>()</span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a>  <span class="cf">for</span> (k <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span><span class="fu">length</span>(extra_overlays<span class="sc">$</span>features)){</span>
+<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (extra_overlays<span class="sc">$</span>features[[k]]<span class="sc">$</span>properties<span class="sc">$</span>muni_name <span class="sc">==</span> ozfs_list<span class="sc">$</span>muni_name){</span>
+<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a>      city_idx <span class="ot">&lt;-</span> <span class="fu">c</span>(city_idx, k)</span>
+<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb9-9"><a href="#cb9-9" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb9-10"><a href="#cb9-10" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb9-11"><a href="#cb9-11" aria-hidden="true" tabindex="-1"></a>  <span class="cf">for</span> (i <span class="cf">in</span> city_idx){</span>
+<span id="cb9-12"><a href="#cb9-12" aria-hidden="true" tabindex="-1"></a>    overlay_feature_i <span class="ot">&lt;-</span> extra_overlays<span class="sc">$</span>features[[i]]</span>
+<span id="cb9-13"><a href="#cb9-13" aria-hidden="true" tabindex="-1"></a>    abbr <span class="ot">&lt;-</span> overlay_feature_i<span class="sc">$</span>properties<span class="sc">$</span>dist_abbr</span>
+<span id="cb9-14"><a href="#cb9-14" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb9-15"><a href="#cb9-15" aria-hidden="true" tabindex="-1"></a>    <span class="co"># find the feature in ozfs_list</span></span>
+<span id="cb9-16"><a href="#cb9-16" aria-hidden="true" tabindex="-1"></a>    feature <span class="ot">&lt;-</span> <span class="dv">0</span></span>
+<span id="cb9-17"><a href="#cb9-17" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> (j <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span><span class="fu">length</span>(ozfs_list<span class="sc">$</span>features)){</span>
+<span id="cb9-18"><a href="#cb9-18" aria-hidden="true" tabindex="-1"></a>      <span class="cf">if</span> (ozfs_list<span class="sc">$</span>features[[j]]<span class="sc">$</span>properties<span class="sc">$</span>dist_abbr <span class="sc">==</span> abbr){</span>
+<span id="cb9-19"><a href="#cb9-19" aria-hidden="true" tabindex="-1"></a>        feature <span class="ot">&lt;-</span> ozfs_list<span class="sc">$</span>features[[j]]</span>
+<span id="cb9-20"><a href="#cb9-20" aria-hidden="true" tabindex="-1"></a>        <span class="cf">break</span></span>
+<span id="cb9-21"><a href="#cb9-21" aria-hidden="true" tabindex="-1"></a>      }</span>
+<span id="cb9-22"><a href="#cb9-22" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb9-23"><a href="#cb9-23" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb9-24"><a href="#cb9-24" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (<span class="fu">class</span>(feature) <span class="sc">==</span> <span class="st">"list"</span>){ <span class="co"># if the feature exists, we add geometry</span></span>
+<span id="cb9-25"><a href="#cb9-25" aria-hidden="true" tabindex="-1"></a>      ozfs_list<span class="sc">$</span>features[[j]]<span class="sc">$</span>geometry <span class="ot">&lt;-</span> overlay_feature_i<span class="sc">$</span>geometry</span>
+<span id="cb9-26"><a href="#cb9-26" aria-hidden="true" tabindex="-1"></a>    } <span class="cf">else</span>{ <span class="co"># if the feature doesn't exist, we create a new feature and add it</span></span>
+<span id="cb9-27"><a href="#cb9-27" aria-hidden="true" tabindex="-1"></a>      <span class="co"># add a new feature</span></span>
+<span id="cb9-28"><a href="#cb9-28" aria-hidden="true" tabindex="-1"></a>      overlay_feature_i<span class="sc">$</span>properties<span class="sc">$</span>muni_name <span class="ot">&lt;-</span> <span class="cn">NULL</span></span>
+<span id="cb9-29"><a href="#cb9-29" aria-hidden="true" tabindex="-1"></a>      overlay_feature_i<span class="sc">$</span>properties<span class="sc">$</span>planned_dev <span class="ot">&lt;-</span> <span class="fu">ifelse</span>(abbr <span class="sc">%in%</span> <span class="fu">c</span>(<span class="st">"PD"</span>,<span class="st">"PRD"</span>),<span class="cn">TRUE</span>,<span class="cn">FALSE</span>)</span>
+<span id="cb9-30"><a href="#cb9-30" aria-hidden="true" tabindex="-1"></a>      overlay_feature_i<span class="sc">$</span>properties<span class="sc">$</span>overlay <span class="ot">&lt;-</span> <span class="cn">TRUE</span></span>
+<span id="cb9-31"><a href="#cb9-31" aria-hidden="true" tabindex="-1"></a>      </span>
+<span id="cb9-32"><a href="#cb9-32" aria-hidden="true" tabindex="-1"></a>      <span class="co"># add a the overlay feature to the end of the features</span></span>
+<span id="cb9-33"><a href="#cb9-33" aria-hidden="true" tabindex="-1"></a>      ozfs_list<span class="sc">$</span>features[[<span class="fu">length</span>(ozfs_list<span class="sc">$</span>features) <span class="sc">+</span> <span class="dv">1</span>]] <span class="ot">&lt;-</span> overlay_feature_i</span>
+<span id="cb9-34"><a href="#cb9-34" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb9-35"><a href="#cb9-35" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb9-36"><a href="#cb9-36" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb9-37"><a href="#cb9-37" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb9-38"><a href="#cb9-38" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb9-39"><a href="#cb9-39" aria-hidden="true" tabindex="-1"></a>  <span class="fu">return</span>(ozfs_list) </span>
+<span id="cb9-40"><a href="#cb9-40" aria-hidden="true" tabindex="-1"></a>}</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
 
 
 </section>

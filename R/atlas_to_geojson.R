@@ -1,24 +1,19 @@
----
-title: "R Script"
-format: html
-editor: visual
----
-
-The following packages need to be loaded to run the r functions: 
-```{r, echo=TRUE}
 library(tidyverse)
 library(readxl)
 library(sf)
 library(rjson)
-```
-Below is each function with a short explanation of what it does. Click [here](../R/atlas_to_geojson.R) to see the raw r script. 
+
+# once you load all the function below, you can run the main function
+# make_ozfs(nza_files_folder = "", 
+#           geom_files_folder = "", 
+#           new_folder_to_save_to = "", 
+#           col_descriptions_path = "",
+#           extra_overlay_geom_file = NULL)
 
 
-## make_ozfs()
-The main function that takes in two folder paths: a folder containing NZA zoning files, and a folder containing NZA geometry files.
-The function returns a folder of .zoning files to the specified path. 
-Remember that the zoning files and the geometry files have to be in the same order so the cities match.
-```{r, echo=TRUE}
+## takes a folder full of nza files and
+## a folder full of geometry files that match the nza files in order
+## and writes to a new folder all the ozfs .zoning files it created
 make_ozfs <- function(nza_files_folder, 
                       geom_files_folder, 
                       new_folder_to_save_to, 
@@ -153,11 +148,8 @@ make_ozfs <- function(nza_files_folder,
   
 }
 
-```
-
-## atlas_to_ozfs()
-This function creates a list structured like the .zoning file and returns the zoning data in this listed format.
-```{r, echo=TRUE}
+## Returns a list following OZFS standards 
+## that is ready to be switched to a geojosn
 atlas_to_ozfs <- function(nza_file_path, #Path to one NZA file (must be xlsx or csv)
                           col_descriptions, #col_descriptions data frame
                           use_type_indicators, #use_type_indicators list
@@ -209,19 +201,16 @@ atlas_to_ozfs <- function(nza_file_path, #Path to one NZA file (must be xlsx or 
   for (i in 1:nrow(atlas_df)){
     atlas_row_df <- atlas_df[i,]
     ozfs_format$features[[i]] <- organize_feature(atlas_row_df, 
-                                                   col_descriptions, 
-                                                   use_type_indicators)
+                                                  col_descriptions, 
+                                                  use_type_indicators)
     
   }
   
   ozfs_format
 }
-```
 
-## organize_feature()
-This function supports the atlas_to_ozfs function by creating a formatted list for the specified zoning district. 
-It basically creates a formatted list for one feature of the geojson file with all of its values. 
-```{r, echo=TRUE}
+## Returns a list representing one feature of the geojson 
+## (one feature is one zoning district)
 organize_feature <- function(atlas_row_df, 
                              col_descriptions, 
                              use_type_indicators){
@@ -304,11 +293,8 @@ organize_feature <- function(atlas_row_df,
   
   return(features_list)
 }
-```
 
-## make_constraints()
-This function organizes the list of constraints for a features list. 
-```{r, echo=TRUE}
+
 make_constraints <- function(constraints_df, separated_uses){
   
   constraints_list <- list()
@@ -402,11 +388,7 @@ make_constraints <- function(constraints_df, separated_uses){
   return(constraints_list)
   
 }
-```
 
-## organize_rules()
-This function organizes the specific conditions for a constraint value. 
-```{r, echo=TRUE}
 organize_rules <- function(df_with_rules, constraint_name){
   
   # this is to check if the df_with_rules is NA
@@ -506,20 +488,15 @@ organize_rules <- function(df_with_rules, constraint_name){
   
   return(all_rule_list)
 }
-```
 
-## write_list_as_json()
-This function takes a list, translates it to json format, and writes it to a specified file.
-```{r, echo=TRUE}
 write_list_as_json <- function(list, file_directory){
   json <- toJSON(list)
   write(json, file_directory)
 }
-```
 
-## add_geometry_to_ozfs()
-This function takes the newly created zoning list and adds the geometry to it from the geometry file. 
-```{r, echo=TRUE}
+# I might need to change this
+# Where it will just assume each geometry and each excel 
+# file already have the overlays it needs.
 add_geometry_to_ozfs <- function(boundary_file_path, ozfs_list){
   
   boundaries <- rjson::fromJSON(file = boundary_file_path)
@@ -535,11 +512,10 @@ add_geometry_to_ozfs <- function(boundary_file_path, ozfs_list){
   }
   ozfs_list
 }
-```
 
-## add_extra_overlays()
-This function takes an file with extra overlays not listed in the main zoning files and adds them to the .zoning list. 
-```{r, echo=TRUE}
+# Takes the output of the add_geometry_to_ozfs() function searches through 
+# an sf object with extra overlays to add any features to the ozfs format. 
+# The sf object must have dist_name, dist_abbr, muni_name, and geometry
 add_extra_overlays <- function(extra_overlay_geom_file, ozfs_list){
   extra_overlays <- fromJSON(file = extra_overlay_geom_file)
   
@@ -580,7 +556,3 @@ add_extra_overlays <- function(extra_overlay_geom_file, ozfs_list){
   
   return(ozfs_list) 
 }
-
-  
-```
-
