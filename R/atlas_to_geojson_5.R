@@ -1,0 +1,832 @@
+library(tidyverse)
+library(rjson)
+library(sf)
+library(readxl)
+
+
+col_descriptions <- read_excel("FortWorthData/col_descriptions.xlsx")
+use_type_indicators <- list(`1_unit` = "_1",
+                            `2_unit` = "_2",
+                            `3_unit` = "_3",
+                            `4_plus` = "_4",
+                            `townhome` = "_th")
+
+write_list_as_json <- function(list, file_directory){
+  json <- toJSON(list)
+  write(json, file_directory)
+}
+
+# I need to change this for the public-facing function.
+# It will just assume each geometry and each excel 
+# file already have the overlays it needs.
+add_geometry_to_ozfs <- function(boundary_file_path, ozfs_list){
+  
+  boundaries <- rjson::fromJSON(file = boundary_file_path)
+  for (i in 1:length(ozfs_list$features)){
+    zoning_dist_abbr <- ozfs_list$features[[i]]$properties$dist_abbr
+    city <- ozfs_list$features[[i]]$properties$muni_name
+    for (j in 1:length(boundaries$features)){
+      boundary_dist_name <- boundaries$features[[j]]$properties$`Abbreviated District Name`
+      if (zoning_dist_abbr == boundary_dist_name){
+        ozfs_list$features[[i]]$geometry <- boundaries$features[[j]]$geometry
+      }
+    }
+  }
+  ozfs_list
+}
+
+# Takes the output of the add_geometry_to_ozfs() function searches through 
+# an sf object with extra overlays to add any features to the ozfs format. 
+# The sf object must have dist_name, dist_abbr, muni_name, and geometry
+add_extra_overlays <- function(extra_overlay_geom_file, ozfs_list){
+  extra_overlays <- fromJSON(file = extra_overlay_geom_file)
+  
+  city_idx <- c()
+  for (k in 1:length(extra_overlays$features)){
+    if (extra_overlays$features[[k]]$properties$muni_name == ozfs_list$muni_name){
+      city_idx <- c(city_idx, k)
+    }
+  }
+  
+  for (i in city_idx){
+    overlay_feature_i <- extra_overlays$features[[i]]
+    abbr <- overlay_feature_i$properties$dist_abbr
+    
+    # find the feature in ozfs_list
+    feature <- 0
+    for (j in 1:length(ozfs_list$features)){
+      if (ozfs_list$features[[j]]$properties$dist_abbr == abbr){
+        feature <- ozfs_list$features[[j]]
+        break
+      }
+    }
+    
+    if (class(feature) == "list"){ # if the feature exists, we add geometry
+      ozfs_list$features[[j]]$geometry <- overlay_feature_i$geometry
+    } else{ # if the feature doesn't exist, we create a new feature and add it
+      # add a new feature
+      overlay_feature_i$properties$muni_name <- NULL
+      overlay_feature_i$properties$planned_dev <- ifelse(abbr %in% c("PD","PRD"),TRUE,FALSE)
+      overlay_feature_i$properties$overlay <- TRUE
+      
+      # add a the overlay feature to the end of the features
+      ozfs_list$features[[length(ozfs_list$features) + 1]] <- overlay_feature_i
+    }
+    
+    
+  }
+  
+  return(ozfs_list) 
+}
+
+atlas_to_ozfs <- function(atlas_df, col_descriptions, use_type_indicators, version_date = "2024-08-14"){
+  
+  # start the geojson list with an empty features list
+  ozfs_format <- list(type = "FeatureCollection",
+                      version = "0.5.0",
+                      muni_name = atlas_df[[1,"muni_name"]],
+                      date = version_date,
+                      # definitions = list(height = list(list(roof_type = "hip",
+                      #                                       expression = "0.5 * (height_top + height_eave)"),
+                      #                                  list(roof_type = "mansard",
+                      #                                       expression = "height_deck"),
+                      #                                  list(roof_type = "gable",
+                      #                                       expression = "0.5 * (height_top + height_eave)"),
+                      #                                  list(roof_type = "skillion",
+                      #                                       expression = "0.5 * (height_top + height_eave)"),
+                      #                                  list(roof_type = "gambrel",
+                      #                                       expression = "0.5 * (height_top + height_eave)"))),
+                      features = list())
+  
+  
+  # loop through each row of atlas_df
+  for (i in 1:nrow(atlas_df)){
+    atlas_row_df <- atlas_df[i,]
+    ozfs_format$features[[i]] <- organize_features(atlas_row_df, 
+                                                   col_descriptions, 
+                                                   use_type_indicators,
+                                                   version_date)
+    
+  }
+  
+  ozfs_format
+}
+
+organize_features <- function(atlas_row_df,
+                              col_descriptions,
+                              use_type_indicators,
+                              version_date = "2024-06-30"){
+  
+  
+  
+  #start with a bare list for the features data to fill
+  features_list <- list(type = "Feature", 
+                        properties = list(),
+                        geometry = list())
+  
+  if (!is.na(atlas_row_df[[1,"dist_name"]])){
+    features_list$properties[["dist_name"]] <- atlas_row_df[[1,"dist_name"]]
+  }
+  
+  if (!is.na(atlas_row_df[[1,"dist_abbr"]])){
+    features_list$properties[["dist_abbr"]] <- atlas_row_df[[1,"dist_abbr"]]
+  }
+  
+  if (atlas_row_df[[1,"dist_abbr"]] == "PD" | atlas_row_df[[1,"dist_abbr"]] == "PRD"){
+    features_list$properties$planned_dev <- TRUE
+  } else{
+    features_list$properties$planned_dev <- FALSE
+  }
+  
+  if (atlas_row_df[[1,"overlay"]] == "No" | is.na(atlas_row_df[[1,"overlay"]])){
+    features_list$properties$overlay <- FALSE
+  } else{
+    features_list$properties$overlay <- TRUE
+    return(features_list)
+  }
+  
+  # I don't think I need the line below
+  # features_list$properties$constraints <- list()
+
+  
+  # make a df for each land use
+  wanted_columns <- col_descriptions$col_name
+  separated_uses <- separate_uses(atlas_row_df, use_type_indicators, wanted_columns)
+  
+  # fill out uses permitted
+  updated_atlas_row_df <- add_uses_permitted_column(atlas_row_df, use_type_indicators)
+  features_list <- update_uses_permitted(features_list,updated_atlas_row_df)
+  
+  # prepare to loop through the other three sections
+  constraints_df <- col_descriptions |>
+    filter(col_name %in% substr(names(atlas_row_df), 1, nchar(names(atlas_row_df)) - 2))
+  
+  if (nrow(constraints_df) > 0){
+    features_list$properties$constraints <- append(features_list$properties$constraints, make_constraints(constraints_df, separated_uses, atlas_row_df[[1,"muni_name"]]))
+  }
+  
+  features_list
+}
+
+#### Creating a new data frame for each use type ####
+separate_uses <- function(df, use_type_indicators, wanted_columns){
+  list_of_use_tables <- list()
+  for (i in 1:length(use_type_indicators)){
+    cols_we_want <- grep(use_type_indicators[[i]], names(df), value = T)
+    new_df <- df |>
+      select(all_of(cols_we_want))
+    
+    names(new_df) <- str_replace_all(names(new_df), use_type_indicators[[i]] , "")
+    
+    # new_df <- new_df |>
+    #   select(any_of(wanted_columns))
+    
+    list_of_use_tables[[names(use_type_indicators[i])]] <- new_df
+  }
+  
+  list_of_use_tables
+  
+}
+
+#### Adding uses_permitted columns ####
+# adding columns with lists of uses_permitted and uses_permitted_exception
+add_uses_permitted_column <- function(df, use_type_indicators){
+  
+  df <- mutate(df, uses_permitted = vector("list", n()),
+               uses_permitted_exception = vector("list", n()))
+  uses_permitted_df <- df |>
+    select(dist_abbr,all_of(grep("use_permitted",names(df), value = T)))
+  
+  for (j in 1:nrow(df)){
+    uses_permitted_list <- list()
+    uses_exception_list <- list()
+    
+    for (i in 1:length(use_type_indicators)){
+      cols_we_want <- grep(use_type_indicators[[i]], names(uses_permitted_df), value = T)
+      if (length(cols_we_want) > 0){
+        field_to_check <- uses_permitted_df[[j,cols_we_want]]
+      } else{
+        next
+      }
+      
+      if (!is.na(field_to_check) & field_to_check == "Allowed/Conditional"){
+        uses_permitted_list <- append(uses_permitted_list, names(use_type_indicators[i]))
+        uses_exception_list <- append(uses_exception_list, names(use_type_indicators[i]))
+      } else if(!is.na(field_to_check) & field_to_check == "Public Hearing"){
+        uses_exception_list <- append(uses_exception_list, names(use_type_indicators[i]))
+      }
+    }
+    df$uses_permitted[[j]] <- uses_permitted_list
+    df$uses_permitted_exception[[j]] <- uses_exception_list
+  }
+  df
+}
+
+#### Fill out the uses_permitted table ####
+# takes in the geojson formatted data and 
+# the updated df that has the uses_permitted lists in it
+update_uses_permitted <- function(geojson_formatted_data, updated_df){
+
+    # name the variable that I will be using
+    uses_permitted <- updated_df[[1, "uses_permitted"]][[1]]
+    
+    #replace the geojson_formatted_data with the value in the updated_df
+    if (length(uses_permitted) > 0){
+      geojson_formatted_data$properties$res_uses <- uses_permitted
+    } else {
+      geojson_formatted_data$properties$res_uses <- "none"
+    }
+  
+  geojson_formatted_data
+}
+
+#### THIS ORGANIZES THE LISTS UNDER CONSTRAINT VALUES ####
+# df_with_rules = dataframe with all the rule columns 
+#   for the rules of one of the variables selected.
+# This dataframe must have ncol > 1
+organize_rules <- function(df_with_rules){
+  
+  # find out how many rules there are
+  counter <- 1
+  df <- df_with_rules[1,grep(paste0("rule", counter), names(df_with_rules))]
+  
+  
+  while (ncol(df) > 0){
+    counter <- counter + 1
+    df <- df_with_rules[1 ,grep(paste0("rule", counter), names(df_with_rules))]
+  }
+  
+  # loop through each rule and make it a list
+  all_rule_list <- list()
+  for (i in 1:(counter - 1)){
+    # create a list that we will keep adding to
+    rule_list <- list()
+    
+    # New df with an isolated rule
+    rule_df <- df_with_rules[ ,grep(paste0("rule", i), names(df_with_rules))]
+    
+    # if it has one of the fields, we will add it to rule_list
+    
+    logical_operator <- NULL
+    # logical_operator
+    if (sum(grep("logical_operator", names(rule_df))) > 0 ){
+      # assign value to logical_operator
+      logical_operator <- rule_df[[1, grep("logical_operator",names(rule_df))]]
+    }
+    
+    # conditions
+    if (sum(grep("condition", names(rule_df))) > 0 ){
+      # make a df to assign multiple values to the array of conditions
+      condition_df <- rule_df[ , grep("condition",names(rule_df))]
+      
+      if (is.null(logical_operator)){
+        condition_value <- condition_df[[1,1]]
+      } else{
+        condition_list <- c()
+        for (j in 1:ncol(condition_df)){
+          condition_list <- c(condition_list,condition_df[[1,j]])
+          condition_value <- paste(condition_list, collapse = paste0(" ", tolower(logical_operator), " "))
+        }
+        
+      }
+      rule_list$condition <- condition_value
+
+    }
+    
+    # criterion
+    if (sum(grep("criterion", names(rule_df))) > 0 ){
+      # assign value to criterion
+      rule_list$criterion <- rule_df[[1, grep("criterion",names(rule_df))[1]]]
+      
+      if (sum(grep("more_restrictive", names(rule_df))) > 0 ){
+        # assign value to more_restrictive
+        if (!is.na(rule_df[[1, grep("more_restrictive",names(rule_df))[1]]])){
+          rule_list$more_restrictive <- rule_df[[1, grep("more_restrictive",names(rule_df))[1]]]
+        } 
+      }
+    }
+    
+    # expression(s)
+    if (sum(grep("expression", names(rule_df))) > 0 ){
+      # make a df to see if it is more than one expression and to extract data
+      df_expression <- rule_df[ , grep(paste0("expression"), names(rule_df))]
+      
+      for (j in 1:ncol(df_expression)){
+        rule_list$expression[[j]] <- as.character(df_expression[[1,j]])
+      }
+      
+    }
+    # add each rule list to the total rules list
+    all_rule_list[[i]] <- rule_list
+  }
+  
+  all_rule_list  
+}
+
+make_constraints <- function(constraints_df,
+                             separated_uses,
+                             city_name = "unknown city"){
+  
+  
+  # get a list of the columns in the separated_uses df
+  col_names <- c()
+  for (y in 1:length(separated_uses)){
+    col_names <- c(col_names, names(separated_uses[[y]]))
+  }
+  col_names <- unique(col_names)
+  
+  # start the empty list
+  constraint_list <- list() 
+  # loop through the constraints section
+  for (i in 1:nrow(constraints_df)){
+    constraint_name <- constraints_df[[i,"col_name"]]
+    
+    # loop through each separated df and list the uses and their values
+    use_name <- c()
+    value <- c()
+    value_minmax <- c()
+    idx <- c()
+    for (j in 1:length(separated_uses)){
+      
+      # one of the separated land use dfs with only the columns pertaining to the constraint we are on
+      separated_use_df <- separated_uses[[j]][,grep(constraint_name,names(separated_uses[[j]]))] 
+      
+      # this separates the minmax columns from the normal ones
+      separated_use_df_minmax <- separated_use_df[,grep("minmax",names(separated_use_df))]
+      
+      # this just takes the normal columns
+      separated_use_df <- separated_use_df |>
+        select(!grep("minmax",names(separated_use_df)))
+      
+      # the name of the active df
+      separated_use_name <- names(separated_uses[j])
+      
+      # create variables to hold the info for normal columns
+      use_name <- c(use_name, separated_use_name)
+      idx <- c(idx,j)
+      # not every use has the column, so we need to add NA
+      if (ncol(separated_use_df) == 1){
+        value <- c(value, as.character(separated_use_df[[1, 1]]))
+      } else if (ncol(separated_use_df) > 1){
+        if (!is.na(separated_use_df[[1, 1]])){
+          value <- c(value, as.character(separated_use_df[[1, 1]]))
+        }else{
+          vals <- c()
+          for (col in 2:ncol(separated_use_df)){
+            vals <- c(vals, as.character(separated_use_df[[1, col]]))
+          }
+          
+          if (sum(is.na(vals)) == length(vals)){
+            value <- c(value, NA)
+          } else{
+            value <- c(value, paste(vals, collapse = " "))  
+          }
+          
+        }
+      }else {
+        value <- c(value, NA)
+      }
+      
+      # create variables to hold the info for minmax columns
+      if (ncol(separated_use_df_minmax) == 1){
+        value_minmax <- c(value_minmax, as.character(separated_use_df_minmax[[1, 1]]))
+      } else if (ncol(separated_use_df_minmax) > 1){
+        if (!is.na(separated_use_df_minmax[[1, 1]])){
+          value_minmax <- c(value_minmax, as.character(separated_use_df_minmax[[1, 1]]))
+        }else{
+          vals <- c()
+          for (col in 2:ncol(separated_use_df_minmax)){
+            vals <- c(vals, as.character(separated_use_df_minmax[[1, col]]))
+          }
+          
+          if (sum(is.na(vals)) == length(vals)){
+            value_minmax <- c(value_minmax, NA)
+          } else{
+            value_minmax <- c(value_minmax, paste(vals, collapse = " "))  
+          }
+          
+        }
+      }else {
+        value_minmax <- c(value_minmax, NA)
+      }
+      
+      
+      
+    }
+    
+    
+    # take uses and values to create 
+    # a df with values and land uses that share that value
+    values_uses_df <- data.frame(use_name = use_name,
+                                 value = value,
+                                 idx = idx) |>
+      group_by(value) |>
+      summarise(use_name = list(use_name),
+                idx = sum(idx)) |> 
+      filter(!is.na(value))
+    
+    values_uses_df <- values_uses_df[order(values_uses_df$idx), ]
+    
+    # now the same things for minmax values
+    values_uses_df_minmax <- data.frame(use_name = use_name,
+                                 value_minmax = value_minmax,
+                                 idx = idx) |>
+      group_by(value_minmax) |>
+      summarise(use_name = list(use_name),
+                idx = sum(idx)) |> 
+      filter(!is.na(value_minmax))
+    
+    values_uses_df_minmax <- values_uses_df_minmax[order(values_uses_df_minmax$idx), ]
+    
+    # get rid of any columns that are NA
+    values_uses_df$value
+    
+    # lets see if minmax columns are present
+    if (identical(values_uses_df$use_name,values_uses_df_minmax$use_name)){
+      minmax_types <- 2 # does it have one value (min or max) or two values (min AND max)
+    } else if(paste0(constraint_name,"_minmax") %in% col_names & sum(!is.na(value_minmax)) > 0){
+      minmax_types <- 1 
+      warning(paste0(city_name," - ",constraint_name," - min and max land uses don't coincide"))
+    } else {
+      minmax_types <- 1
+      
+    }
+    
+    
+    
+    if (nrow(values_uses_df) > 0){
+      
+      
+      # loop through the val_use_df to add values to the geojson
+      for (l in 1:nrow(values_uses_df)){
+        
+        # add length to the list so it can hold multiple things
+        if (!is.null(constraint_list[[constraint_name]])){
+          length(constraint_list[[constraint_name]]) <- l
+        }
+        
+        
+        # adding the use_name
+        constraint_list[[constraint_name]][[l]]$uses <- as.list(values_uses_df$use_name[[l]])
+        
+        
+        for (z in 1:minmax_types){
+          if (z == 1){
+            val_use_df <- values_uses_df
+            max_min_field <- constraints_df[[i,"min_or_max"]]
+          } else if (z == 2){
+            val_use_df <- values_uses_df_minmax
+            max_min_field <- ifelse(constraints_df[[i,"min_or_max"]] == "min", "max","min")
+          }
+          
+          # min or max value
+          
+          if (!is.na(max_min_field) & max_min_field == "min"){
+            values_uses_first_use <- val_use_df$use_name[[l]][[1]]
+            if (z == 1){
+              df_with_rules <- separated_uses[[values_uses_first_use]][,grep(constraint_name,names(separated_uses[[values_uses_first_use]]))]
+              df_with_rules <- df_with_rules |>
+                select(!grep("minmax",names(df_with_rules)))
+            } else{
+              df_with_rules <- separated_uses[[values_uses_first_use]][,grep(constraint_name,names(separated_uses[[values_uses_first_use]]))]
+              df_with_rules <- df_with_rules[,grep("minmax",names(df_with_rules))]
+            }
+            
+            if (ncol(df_with_rules) > 1 & !is.na(df_with_rules[[1,1]])){  # if there are rule columns (probably blank) but there is a value for the main constrait column
+              constraint_list[[constraint_name]][[l]]$min_val <- list(list(expression = list(as.character(df_with_rules[[1,1]]))))
+            } else if (ncol(df_with_rules) > 1){ # if there is no value and there are rules columns, it must rely on the rules
+              # we change the df_with_rules to just contain the rules of that constraint
+              if (z == 1){
+                df_with_rules <- separated_uses[[values_uses_first_use]][,grep(paste0(constraint_name,"_rule"),names(separated_uses[[values_uses_first_use]]))]
+              } else{
+                df_with_rules <- separated_uses[[values_uses_first_use]][,grep(paste0(constraint_name,"_minmax","_rule"),names(separated_uses[[values_uses_first_use]]))]
+              }
+              if (ncol(df_with_rules) == 0){ # this is a fairly rare case where you have similarly named columns that mess up the df_with_rules
+                # delete the partial stuff that had already been added to the constraint
+                constraint_list[[constraint_name]] <- NULL
+              } else{
+                constraint_list[[constraint_name]][[l]]$min_val <- organize_rules(df_with_rules)
+              }
+              
+            } else { # this is the case where there are no rules and just a value for the constraint
+              constraint_list[[constraint_name]][[l]]$min_val <- list(list(expression = list(as.character(df_with_rules[[1,1]]))))
+            }
+            
+          } else if (!is.na(max_min_field) & max_min_field == "max"){
+            values_uses_first_use <- val_use_df$use_name[[l]][[1]]
+            if (z == 1){
+              df_with_rules <- separated_uses[[values_uses_first_use]][,grep(constraint_name,names(separated_uses[[values_uses_first_use]]))]
+              df_with_rules <- df_with_rules |>
+                select(!grep("minmax",names(df_with_rules)))
+            } else{
+              df_with_rules <- separated_uses[[values_uses_first_use]][,grep(constraint_name,names(separated_uses[[values_uses_first_use]]))]
+              df_with_rules <- df_with_rules[,grep("minmax",names(df_with_rules))]
+            }
+            if (ncol(df_with_rules) > 1 & !is.na(df_with_rules[[1,1]])){  # if there are rule columns (probably blank) but there is a value for the main constraint column
+              constraint_list[[constraint_name]][[l]]$max_val <- list(list(expression = list(as.character(df_with_rules[[1,1]]))))
+            } else if (ncol(df_with_rules) > 1){ # if there is no value and there are rules columns, it must rely on the rules
+              # we change the df_with_rules to just contain the rules of that constraint
+              if (z == 1){
+                df_with_rules <- separated_uses[[values_uses_first_use]][,grep(paste0(constraint_name,"_rule"),names(separated_uses[[values_uses_first_use]]))]
+              } else{
+                df_with_rules <- separated_uses[[values_uses_first_use]][,grep(paste0(constraint_name,"_minmax","_rule"),names(separated_uses[[values_uses_first_use]]))]
+              }
+              
+              if (ncol(df_with_rules) == 0){ # this is a fairly rare case where you have similarly named columns that mess up the df_with_rules
+                # delete the partial stuff that had already been added to the constraint
+                constraint_list[[constraint_name]] <- NULL
+              } else{
+                constraint_list[[constraint_name]][[l]]$max_val <- organize_rules(df_with_rules)
+              }
+              
+            } else { # this is the case where there are no rules and just a value for the constraint
+              constraint_list[[constraint_name]][[l]]$max_val <- list(list(expression = list(as.character(df_with_rules[[1,1]]))))
+            }
+          }
+          
+        }
+        
+      }
+    }
+  }
+  constraint_list
+}
+
+make_ozfs <- function(list_nza_excels, list_geometries, new_folder_to_save_to, extra_overlay_geom_file = NULL){
+  col_descriptions <- read_excel("FortWorthData/col_descriptions.xlsx")
+  use_type_indicators <- list(`1_unit` = "_1", 
+                              `2_unit` = "_2",
+                              `3_unit` = "_3",
+                              `4_plus` = "_4",
+                              `townhome` = "_th")
+  ozfs_errors <- c()
+  ozfs_warnings <- c()
+  geom_errors <- c()
+  geom_warnings <- c()
+  overlay_errors <- c()
+  overlay_warnings <- c()
+  for (i in 1:length(list_nza_excels)){
+    nza_excel <- read_excel(list_nza_excels[[i]])
+    
+    file_name <- basename(list_nza_excels[[i]])
+    file_name_no_ext <- sub(".xlsx","",file_name)
+    
+    ozfs_list_format <- tryCatch(
+      {
+        # Code that might throw an error
+        atlas_to_ozfs(nza_excel, col_descriptions, use_type_indicators)
+      }, warning = function(w) {
+        return(c("warning",e$message))
+      }, error = function(e) {
+        # Code to run if an error occurs
+        return(c("error",e$message))
+        
+      }
+    )
+    
+    if (ozfs_list_format[[1]] == "warning"){
+      ozfs_warnings <- c(ozfs_warnings, ozfs_list_format[[2]])
+    }
+    if (ozfs_list_format[[1]] == "error"){
+      ozfs_errors <- c(ozfs_errors, ozfs_list_format[[2]])
+    }
+    
+    ozfs_list_with_geom <- tryCatch(
+      {
+        # Code that might throw an error
+        add_geometry_to_ozfs(list_geometries[[i]], ozfs_list_format)
+      }, warning = function(w) {
+        return(c("warning",e$message))
+      },
+      error = function(e) {
+        # Code to run if an error occurs
+        return(c("error",e$message))
+        
+      }
+    )
+    
+    if (ozfs_list_with_geom[[1]] == "warning"){
+      geom_warnings <- c(geom_warnings, ozfs_list_with_geom[[2]])
+    }
+    if (ozfs_list_with_geom[[1]] == "error"){
+      geom_errors <- c(geom_errors, ozfs_list_with_geom[[2]])
+    }
+    
+    
+    if (!is.null(extra_overlay_geom_file)){
+      ozfs_list_with_geom <- tryCatch(
+        {
+          # Code that might throw an error
+          add_extra_overlays(extra_overlay_geom_file, ozfs_list_with_geom)
+        }, warning = function(w) {
+          return(c("warning",e$message))
+        },
+        error = function(e) {
+          # Code to run if an error occurs
+          return(c("error",e$message))
+          
+        }
+      )
+      
+      if (ozfs_list_with_geom[[1]] == "warning"){
+        overlay_warnings <- c(ozfs_warnings, ozfs_list_format[[2]])
+      }
+      if (ozfs_list_with_geom[[1]] == "error"){
+        overlay_errors <- c(ozfs_errors, ozfs_list_format[[2]])
+      }
+    }
+    
+    new_file_directory <- paste0(new_folder_to_save_to, file_name_no_ext, ".zoning")
+    write_list_as_json(ozfs_list_with_geom, new_file_directory)
+  }
+  
+  if (!is.null(extra_overlay_geom_file)){
+    list(ozfs_errors = ozfs_errors,
+         ozfs_warnings = ozfs_warnings,
+         geom_errors = geom_errors,
+         geom_warnings = geom_warnings,
+         overlay_errors = geom_errors,
+         overlay_warnings = geom_warnings)
+  } else{
+    list(ozfs_errors = ozfs_errors,
+         ozfs_warnings = ozfs_warnings,
+         geom_errors = geom_errors,
+         geom_warnings = geom_warnings)
+  }
+  
+}
+
+# This funciton just quickly looks through the excel col names 
+#to make sure I didn't make a typo in the use_type indicators as I adjusted them
+
+check_excel_file <- function(list_nza_excels, col_descriptions){
+  use_type_indicators <- list(`1_family` = "_1", 
+                              `2_family` = "_2",
+                              `3_family` = "_3",
+                              `4_family` = "_4",
+                              `Townhome` = "_th",
+                              `ADU` = "_adu",
+                              `Affordable_Housing` = "_ah",
+                              `Planned_Residential_Development` = "_prd")
+  
+  col_name_list <- list()
+  for (i in 1:length(list_nza_excels)){
+    file <- list_nza_excels[[i]]
+    df <- read_excel(file)
+    df <- df[,18:length(names(df)) - 2]
+    col_names <- names(df)
+    
+    
+    
+    for (k in 1:length(use_type_indicators)){
+      use_type <- use_type_indicators[[k]]
+      selected_cols <- col_names[grep(pattern = use_type, col_names)]
+      
+      correct_cols <- c(correct_cols, selected_cols)
+    }
+    
+    incorrect_cols <- col_names[!col_names %in% correct_cols]
+    
+    if (length(incorrect_cols) > 0){
+      col_name_list["incorrect_indicator"] <- incorrect_cols
+    }
+    
+  }
+  col_name_list
+}
+
+check_atlas_columns <- function(excel_list){
+  col_grep <- read_excel("FortWorthData/col_grep.xlsx")
+  cols_no_care <- read_excel("FortWorthData/cols_no_care.xlsx")
+  grep_patterns <- col_grep$name
+  
+  
+  filter_incorrect_spellings <- function(l1, l2) {
+    # Function to check spelling per character string
+    is_correctly_spelled <- function(character_string, valid_words) {
+      words <- strsplit(character_string, "_")[[1]]
+      all(words %in% valid_words)
+    }
+    
+    # Filter list 1 to include only incorrectly spelled entries
+    result <- l1[sapply(l1, is_correctly_spelled, valid_words = l2) == FALSE]
+    return(result)
+  }
+  
+  
+  error_list <- list()
+  for (i in 1:length(excel_list)){
+    excel <- read_excel(excel_list[[i]])
+    col_names <- names(excel)[names(excel) %in% cols_no_care$name == FALSE]
+    incorrect_cols <- filter_incorrect_spellings(col_names, grep_patterns)
+    if (length(incorrect_cols) > 0){
+      incorrect_cols <- append(incorrect_cols, excel_list[[i]], after = 0)
+      error_list[[length(error_list) + 1]] <- incorrect_cols
+    }
+  }
+  error_list
+}
+  
+
+# excel_files <- list.files("FortWorthData/nza_to_ozfs_dallas_city/excel_2", full.names = TRUE)
+# geometry_files <- list.files("FortWorthData/nza_to_ozfs_dallas_city/geometry", full.names = TRUE)
+# 
+# check_geometry_fields(geometry_files)
+# dist_and_geom_compare(excel_files, geometry_files)
+# check_atlas_columns(excel_files)
+# 
+# make_ozfs(excel_files, geometry_files, "FortWorthData/nza_to_ozfs_dallas_city/ozfs/")
+
+excel_files <- list.files("FortWorthData/nza_to_ozfs_june_9_2025/excel", full.names = TRUE)
+geometry_files <- list.files("FortWorthData/nza_to_ozfs_june_9_2025/geometry", full.names = TRUE)
+
+check_geometry_fields(geometry_files)
+dist_and_geom_compare(excel_files, geometry_files)
+check_atlas_columns(excel_files)
+
+make_ozfs(excel_files, geometry_files, "FortWorthData/nza_to_ozfs_june_9_2025/ozfs/","FortWorthData/nza_to_ozfs_all_counties/all_overlays.geojson")
+
+# dal1 <- fromJSON(file = "FortWorthData/nza_to_ozfs_dallas_city/ozfs/adjusted_Dallas_1_nza.zoning")
+# dal2 <- fromJSON(file = "FortWorthData/nza_to_ozfs_dallas_city/ozfs/adjusted_Dallas_2_nza.zoning")
+# 
+# dallas <- list(type = "FeatureCollection",
+# muni_name = "Dallas",
+# date = "2024-06-30",
+# definitions = list(),
+# features = list())
+# 
+# dallas$features <- append(dal1$features,dal2$features)
+# 
+# dallas_to_json <- toJSON(dallas)
+# 
+# write(dallas_to_json, "FortWorthData/nza_to_ozfs_dallas_city/ozfs/adjusted_Dallas_nza.zoning")
+
+
+
+run_county <- function(county){
+  excel_files <- list.files(paste0("FortWorthData/nza_to_ozfs_",county,"/excel"), full.names = TRUE)
+  geometry_files <- list.files(paste0("FortWorthData/nza_to_ozfs_",county,"/geometry"), full.names = TRUE)
+  
+  make_ozfs(excel_files, geometry_files, paste0("FortWorthData/nza_to_ozfs_",county,"/ozfs/"),"FortWorthData/nza_to_ozfs_all_counties/all_overlays.geojson")
+}
+
+run_county("dallas_city")
+
+
+  
+## Making sure district names match in excel and geometry files.
+dist_and_geom_compare <- function(excel_files, geometry_files){
+  select_name_and_dist <- function(df){
+    df[,c("muni_name","dist_abbr")]
+  }
+  
+  read_excels <- lapply(excel_files, read_excel) |>
+    lapply(select_name_and_dist)
+  
+  combined_excels <- bind_rows(read_excels) |>
+    mutate(Juris = muni_name, Abbrevia = dist_abbr)
+  
+  
+  select_juris_and_dist <- function(df){
+    df[,c("Jurisdiction","Abbreviated.District.Name")]
+  }
+  read_geometries <- lapply(geometry_files, st_read) |>
+    lapply(st_drop_geometry) |>
+    lapply(select_juris_and_dist)
+  
+  combined_geometries <- as_tibble(bind_rows(read_geometries)) |>
+    mutate(muni_name = Jurisdiction, dist_abbr = `Abbreviated.District.Name`)
+  
+  # The geometry and excel columns joined to see where they don't match up
+  joined_tables <- full_join(combined_excels, combined_geometries)  
+  
+  # Theses are all the districts that are mapped in the geojson that aren't recorded in the excel files
+  joined_tables[is.na(joined_tables$Juris),] |>
+    select(muni_name,dist_abbr,Juris, `Abbreviated.District.Name`)
+}
+
+check_geometry_fields <- function(geom_file_list){
+  incorrect_cols <- c()
+  for (i in 1:length(geom_file_list)){
+    json_list <- fromJSON(file = geom_file_list[[i]])
+    
+    jurisdiction <- json_list$features[[1]]$properties$Jurisdiction
+    abbr_dist_name <- json_list$features[[1]]$properties$`Abbreviated District Name`
+    
+    if (is.null(jurisdiction) | is.null(abbr_dist_name)){
+      incorrect_cols <- c(incorrect_cols,geom_file_list[[i]])
+    }
+  }
+  
+  if (is.null(incorrect_cols)){
+    return("Each geojson file has the proper fields")
+  } else(
+    return(data.frame(`files with incorrect fields` = incorrect_cols))
+  )
+  
+}
+
+
+
+
+  
